@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAplikasi } from '@/components/Aplikasi';
 import { Ikon } from '@/components/Ikon';
 import { api } from '@/lib/klien/api';
+import { dataBukti, InputBuktiPengajuan } from '@/components/BuktiPengajuan';
 import { NAMA_BULAN, teksStatus, tglPendek, todayStr } from '@/lib/klien/format';
 
 type Data = Record<string, any>;
@@ -111,8 +112,13 @@ function FormJadwal({ jenis, d, selesai }: { jenis: 'ganti_shift' | 'libur'; d: 
   const hariDepan = (d.hari as Data[]).filter((h) => h.tanggal >= todayStr() && !h.sudahAbsen);
   const label = (h: Data) => `${tglPendek(h.tanggal)} — ${h.libur ? 'LIBUR' : h.shift ? h.shift.nama : me?.jamMode === 'fleksibel' ? 'Fleksibel' : 'Kerja'}`;
   const [tgl, setTgl] = useState(hariDepan[0]?.tanggal ?? ''), [tgl2, setTgl2] = useState(''), [sh, setSh] = useState(0), [alasan, setAlasan] = useState('');
-  const kirim = () => api<{ pesan: string }>('pengajuan_ajukan', { jenis, tanggal: tgl, tanggal2: tgl2, shiftId: sh || shift[0]?.id, alasan: alasan.trim() })
-    .then((r) => { tutupSheet(); toast(r.pesan); selesai(); }).catch(galat);
+  const [buktiLink, setBuktiLink] = useState(''), [buktiFile, setBuktiFile] = useState<File | null>(null);
+  const kirim = async () => {
+    try {
+      const r = await api<{ pesan: string }>('pengajuan_ajukan', { jenis, tanggal: tgl, tanggal2: tgl2, shiftId: sh || shift[0]?.id, alasan: alasan.trim(), buktiLink: buktiLink.trim(), buktiFile: await dataBukti(buktiFile) });
+      tutupSheet(); toast(r.pesan); selesai();
+    } catch (e) { galat(e); }
+  };
   return (<>
     <h3>{jenis === 'ganti_shift' ? 'Ajukan Ganti Shift' : 'Ajukan Libur / Pindah Libur'}</h3>
     <label>Tanggal</label><select value={tgl} onChange={(e) => setTgl(e.target.value)}>{hariDepan.map((h) => <option key={h.tanggal} value={h.tanggal}>{label(h)}</option>)}</select>
@@ -123,6 +129,7 @@ function FormJadwal({ jenis, d, selesai }: { jenis: 'ganti_shift' | 'libur'; d: 
           {hariDepan.map((h) => <option key={h.tanggal} value={h.tanggal}>{label(h)}</option>)}</select></>)
         : <div className="tiny muted" style={{ marginTop: 4 }}>Untuk cuti tahunan atau izin, gunakan menu Pengajuan. Menu ini hanya mengubah jadwal kerja menjadi libur.</div>}
     <label>Alasan</label><textarea value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="mis. ada keperluan keluarga" />
+    <InputBuktiPengajuan link={buktiLink} setLink={setBuktiLink} file={buktiFile} setFile={setBuktiFile} />
     <button className="btn" onClick={kirim}><Ikon n="send" />Kirim ke HC</button>
     <button className="btn ghost" onClick={tutupSheet}>Batal</button>
   </>);
@@ -133,6 +140,7 @@ function FormTukar({ d, bl, th, selesai }: { d: Data; bl: number; th: number; se
   const hariSaya = (d.hari as Data[]).filter((h) => h.tanggal >= todayStr() && !h.sudahAbsen);
   const [t1, setT1] = useState(hariSaya[0]?.tanggal ?? ''), [rid, setRid] = useState(0), [hariRekan, setHariRekan] = useState<Data[] | null>(null);
   const [t2, setT2] = useState(''), [alasan, setAlasan] = useState('');
+  const [buktiLink, setBuktiLink] = useState(''), [buktiFile, setBuktiFile] = useState<File | null>(null);
   useEffect(() => {
     if (!rid) { setHariRekan(null); return; }
     api<Data>('jadwal_rekan', { rekanId: rid, bulan: bl, tahun: th }, true).then((x) => {
@@ -142,7 +150,8 @@ function FormTukar({ d, bl, th, selesai }: { d: Data; bl: number; th: number; se
   if (!d.rekan.length) return (<><h3>Ajukan Tukar</h3><div className="empty">Belum ada rekan bermode shift di lokasi kerja Anda.</div><button className="btn ghost" onClick={tutupSheet}>Tutup</button></>);
   const kirim = () => {
     if (!rid || !t2) { toast('Pilih rekan dan tanggalnya', true); return; }
-    api<{ pesan: string }>('tukar_ajukan', { rekanId: rid, tglSaya: t1, tglRekan: t2, alasan: alasan.trim() }).then((r) => { tutupSheet(); toast(r.pesan); selesai(); }).catch(galat);
+    dataBukti(buktiFile).then((buktiFileData) => api<{ pesan: string }>('tukar_ajukan', { rekanId: rid, tglSaya: t1, tglRekan: t2, alasan: alasan.trim(), buktiLink: buktiLink.trim(), buktiFile: buktiFileData }))
+      .then((r) => { tutupSheet(); toast(r.pesan); selesai(); }).catch(galat);
   };
   return (<>
     <h3>Ajukan Tukar Shift / Libur</h3>
@@ -154,6 +163,7 @@ function FormTukar({ d, bl, th, selesai }: { d: Data; bl: number; th: number; se
       {hariRekan.length ? hariRekan.map((h) => <option key={h.tanggal} value={h.tanggal}>{tglPendek(h.tanggal)} — {h.libur ? 'LIBUR' : h.shift || 'belum diatur'}</option>)
         : <option value="">tidak ada tanggal tersedia</option>}</select></>)}
     <label>Alasan</label><textarea value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="mis. ada acara keluarga" />
+    <InputBuktiPengajuan link={buktiLink} setLink={setBuktiLink} file={buktiFile} setFile={setBuktiFile} />
     <div className="note">Permintaan dikirim ke rekan Anda dulu. Setelah ia setuju, HC yang memutuskan.</div>
     <button className="btn" onClick={kirim}>Kirim Permintaan</button>
     <button className="btn ghost" onClick={tutupSheet}>Batal</button>

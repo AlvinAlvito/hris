@@ -1,5 +1,5 @@
 /* Pengajuan pegawai: cuti, izin/sakit/WFH/dinas/setengah hari, lembur & jadwal. Semua diputus HC. */
-import { exec, q, q1 } from '@/lib/db';
+import { exec, nilai, q, q1 } from '@/lib/db';
 import { gagal, i, s } from '@/lib/http';
 import {
   cutiAktif, cutiPending, hitungHari, jadwalHari, jamTeks, KET_TETAP_KERJA, labelKet, logAksi, namaJadwal, need, nilaiJadwal,
@@ -8,6 +8,8 @@ import {
 import { cutiRow, ketRow, pengajuanRow, userPublik } from '@/lib/format';
 import { epoch, POLA_JAM, POLA_TGL, tambahHari, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
+import { simpanBuktiPengajuan, validasiLinkBukti } from './bukti';
+import { hasilHalaman, paramHalaman, polaCari } from '@/lib/paginasi';
 
 const tglId = (t: string) => t.split('-').reverse().join('/');
 
@@ -15,13 +17,13 @@ export const aksiPengajuan: KumpulanAksi = {
   /* ---------- cuti ---------- */
   async cuti_saya() {
     const u = await need();
-    const list = await q('SELECT * FROM cuti WHERE user_id=? ORDER BY created_at DESC', [u.id]);
-    return { me: await userPublik(u), pending: await cutiPending(u.id), list: list.map(cutiRow) };
+    return { me: await userPublik(u), pending: await cutiPending(u.id) };
   },
   async cuti_ajukan(m) {
     const u = await need();
     if (u.role === 'direktur') gagal('Super Admin tidak memiliki jatah cuti');
     const jenis = s(m, 'jenis'), mulai = s(m, 'mulai'), selesai = s(m, 'selesai'), alasan = s(m, 'alasan');
+    validasiLinkBukti(m);
     if (!['Cuti Tahunan', 'Sakit', 'Izin', 'Cuti Melahirkan', 'Cuti Penting'].includes(jenis)) gagal('Jenis cuti tidak sah');
     if (!POLA_TGL.test(mulai) || !POLA_TGL.test(selesai)) gagal('Tanggal tidak sah');
     if (alasan === '') gagal('Alasan wajib diisi');
@@ -32,7 +34,9 @@ export const aksiPengajuan: KumpulanAksi = {
       const sisa = (await sisaCuti(u)) - (await cutiPending(u.id));
       if (hari > sisa) gagal(`Melebihi sisa cuti (${sisa} hari)`);
     }
-    await exec('INSERT INTO cuti (user_id,jenis,mulai,selesai,hari,alasan,status) VALUES (?,?,?,?,?,?,?)', [u.id, jenis, mulai, selesai, hari, alasan, 'Menunggu']);
+    const ins = await exec('INSERT INTO cuti (user_id,jenis,mulai,selesai,hari,alasan,status) VALUES (?,?,?,?,?,?,?)', [u.id, jenis, mulai, selesai, hari, alasan, 'Menunggu']);
+    const buktiLink = await simpanBuktiPengajuan(m, u, 'cuti', ins.insertId);
+    if (buktiLink) await exec('UPDATE cuti SET bukti_link=? WHERE id=?', [buktiLink, ins.insertId]);
     await logAksi(u.id, 'ajukan_cuti', `${jenis} ${mulai}..${selesai}`);
     return { pesan: u.role === 'admin' ? 'Terkirim — menunggu persetujuan HC lain atau Super Admin' : 'Pengajuan terkirim, menunggu persetujuan HC' };
   },
@@ -48,6 +52,7 @@ export const aksiPengajuan: KumpulanAksi = {
     const u = await need();
     if (u.role === 'direktur') gagal('Super Admin tidak melakukan absensi');
     const jenis = s(m, 'jenis');
+    validasiLinkBukti(m);
     if (!['sakit', 'izin', 'keperluan', 'libur', 'lainnya', 'setengah_hari', 'wfh', 'dlk'].includes(jenis)) gagal('Jenis pengajuan tidak sah');
     const tgl = s(m, 'tanggal');
     if (!POLA_TGL.test(tgl)) gagal('Tanggal tidak sah');
@@ -82,8 +87,17 @@ export const aksiPengajuan: KumpulanAksi = {
       if (ada) gagal('Sudah ada pengajuan untuk ' + tglId(t));
     }
     const status = (await perluRekomendasi(u)) ? 'Menunggu Rekomendasi' : 'Menunggu HR';
-    for (const t of tanggal)
-      await exec('INSERT INTO ketidakhadiran (user_id,tanggal,jenis,sesi,alasan,status) VALUES (?,?,?,?,?,?)', [u.id, t, jenis, sesiIzin, alasan, status]);
+    let idBukti: number | null = null;
+    for (const t of tanggal) {
+      const ins = await exec('INSERT INTO ketidakhadiran (user_id,tanggal,jenis,sesi,alasan,status) VALUES (?,?,?,?,?,?)', [u.id, t, jenis, sesiIzin, alasan, status]);
+      if (idBukti === null) idBukti = ins.insertId;
+      const link = s(m, 'buktiLink').trim();
+      if (link) await exec('UPDATE ketidakhadiran SET bukti_link=? WHERE id=?', [link, ins.insertId]);
+    }
+    if (idBukti !== null) {
+      const buktiLink = await simpanBuktiPengajuan(m, u, 'ketidakhadiran', idBukti);
+      if (buktiLink) await exec('UPDATE ketidakhadiran SET bukti_link=? WHERE user_id=? AND tanggal BETWEEN ? AND ?', [buktiLink, u.id, tgl, sampai]);
+    }
     await logAksi(u.id, 'ajukan_ketidakhadiran', labelKet(jenis) + ' ' + tgl + (sampai !== tgl ? '..' + sampai : ''));
     const n = tanggal.length;
     return { pesan: labelKet(jenis) + (n > 1 ? ` ${n} hari` : '') + ' terkirim. Menunggu persetujuan HC.' };
@@ -106,6 +120,7 @@ export const aksiPengajuan: KumpulanAksi = {
   async pengajuan_ajukan(m) {
     const u = await need();
     const jenis = s(m, 'jenis');
+    validasiLinkBukti(m);
     if (!['ganti_shift', 'libur', 'lembur'].includes(jenis)) gagal('Jenis pengajuan tidak sah');
     const tgl = s(m, 'tanggal');
     if (!POLA_TGL.test(tgl)) gagal('Tanggal tidak sah');
@@ -150,8 +165,10 @@ export const aksiPengajuan: KumpulanAksi = {
       AND status IN ('Menunggu Rekomendasi','Menunggu HR')`, [u.id, tgl, jenis]);
     if (ada) gagal('Sudah ada pengajuan sejenis yang masih berjalan untuk tanggal itu');
     const status = (await perluRekomendasi(u)) ? 'Menunggu Rekomendasi' : 'Menunggu HR';
-    await exec(`INSERT INTO pengajuan (user_id,jenis,tanggal,tanggal2,shift_id,jam_mulai,jam_selesai,menit,alasan,status,jadwal_sebelum,jadwal_sesudah)
+    const ins = await exec(`INSERT INTO pengajuan (user_id,jenis,tanggal,tanggal2,shift_id,jam_mulai,jam_selesai,menit,alasan,status,jadwal_sebelum,jadwal_sesudah)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, [u.id, jenis, tgl, tgl2, shiftId, jamA, jamB, menit, alasan, status, sebelum, sesudah]);
+    const buktiLink = await simpanBuktiPengajuan(m, u, 'pengajuan', ins.insertId);
+    if (buktiLink) await exec('UPDATE pengajuan SET bukti_link=? WHERE id=?', [buktiLink, ins.insertId]);
     await logAksi(u.id, 'ajukan_' + jenis, tgl);
     return { pesan: 'Pengajuan terkirim. Menunggu keputusan HC.' };
   },
@@ -160,6 +177,30 @@ export const aksiPengajuan: KumpulanAksi = {
     const l = await q(`SELECT p.*, u.nama, u.nik FROM pengajuan p JOIN users u ON u.id=p.user_id
       WHERE p.user_id=? ORDER BY p.id DESC LIMIT 60`, [u.id]);
     return Promise.all(l.map(pengajuanRow));
+  },
+  async pengajuan_riwayat(m) {
+    const u = await need(), h = paramHalaman(m), jenis = s(m, 'filter', 'semua');
+    const union = `
+      SELECT 'cuti' tipe, c.id, c.created_at diajukan, c.status, c.jenis judul, c.alasan ket, c.catatan, c.bukti_link buktiLink,
+        CONCAT(DATE_FORMAT(c.mulai,'%d/%m/%Y'),' - ',DATE_FORMAT(c.selesai,'%d/%m/%Y'),' · ',c.hari,' hari') waktu FROM cuti c WHERE c.user_id=?
+      UNION ALL SELECT 'ket' tipe, k.id, k.created_at diajukan, k.status, k.jenis judul, k.alasan ket, k.catatan_hr catatan, k.bukti_link buktiLink,
+        DATE_FORMAT(k.tanggal,'%d/%m/%Y') waktu FROM ketidakhadiran k WHERE k.user_id=?
+      UNION ALL SELECT 'pengajuan' tipe, p.id, p.created_at diajukan, p.status, p.jenis judul, p.alasan ket, p.catatan_hr catatan, p.bukti_link buktiLink,
+        CONCAT(DATE_FORMAT(p.tanggal,'%d/%m/%Y'),IF(p.jam_mulai IS NOT NULL,CONCAT(' · ',TIME_FORMAT(p.jam_mulai,'%H:%i'),'–',TIME_FORMAT(p.jam_selesai,'%H:%i')),'')) waktu FROM pengajuan p WHERE p.user_id=?
+      UNION ALL SELECT 'reimburse' tipe, r.id, r.created_at diajukan, r.status, r.kategori judul, r.keterangan ket, r.hr_catatan catatan, r.bukti_link buktiLink,
+        CONCAT(DATE_FORMAT(r.tanggal,'%d/%m/%Y'),' · Rp',FORMAT(r.nominal,0)) waktu FROM reimburse r WHERE r.user_id=?
+      UNION ALL SELECT 'kasbon' tipe, k.id, k.created_at diajukan, k.status, 'Kasbon' judul, k.alasan ket, k.hr_catatan catatan, k.bukti_link buktiLink,
+        CONCAT('Rp',FORMAT(k.nominal,0),' · ',k.tenor,'× cicilan') waktu FROM kasbon k WHERE k.user_id=?`;
+    let filter = '';
+    if (jenis === 'menunggu') filter += " WHERE status LIKE 'Menunggu%'";
+    else if (jenis === 'disetujui') filter += " WHERE status IN ('Disetujui','Dibayar','Aktif','Lunas')";
+    else if (jenis === 'ditolak') filter += " WHERE status LIKE 'Ditolak%'";
+    else filter += " WHERE status<>'Dibatalkan'";
+    const params: unknown[] = [u.id, u.id, u.id, u.id, u.id];
+    if (h.cari) { filter += ' AND (judul LIKE ? OR ket LIKE ? OR status LIKE ? OR waktu LIKE ?)'; params.push(...Array(4).fill(polaCari(h.cari))); }
+    const total = Number(await nilai(`SELECT COUNT(*) FROM (${union}) riwayat${filter}`, params));
+    const rows = await q(`SELECT * FROM (${union}) riwayat${filter} ORDER BY diajukan DESC LIMIT ? OFFSET ?`, [...params, h.limit, h.offset]);
+    return hasilHalaman(rows.map((x) => ({ ...x, jenis: x.tipe, tglAjukan: x.diajukan, catatan: x.catatan ?? '', buktiLink: x.buktiLink ?? '' })), total, h.page);
   },
   async pengajuan_batal(m) {
     const u = await need();

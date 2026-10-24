@@ -1,6 +1,6 @@
 /* Reimburse: karyawan ajukan + bukti → HC verifikasi → HC setujui pembayaran (transfer / lewat gaji) → Dibayar.
    Pemohon tidak pernah bisa memverifikasi atau menyetujui klaimnya sendiri. */
-import { exec, q, q1, transaksi, type Baris } from '@/lib/db';
+import { exec, nilai, q, q1, transaksi, type Baris } from '@/lib/db';
 import { b, gagal, i, s } from '@/lib/http';
 import { logAksi, need, rupiah } from '@/lib/aturan';
 import { berkasUntuk, simpanBerkas } from '@/lib/berkasPrivat';
@@ -8,6 +8,8 @@ import { setgInt, settingsPublik } from '@/lib/pengaturan';
 import { periodeSah, periodeTerkunci, uang } from '@/lib/periode';
 import { POLA_TGL, tambahHari, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
+import { validasiLinkBukti } from './bukti';
+import { hasilHalaman, paramHalaman, polaCari } from '@/lib/paginasi';
 
 async function rbRow(r: Baris) {
   return {
@@ -17,7 +19,7 @@ async function rbRow(r: Baris) {
     nominalDisetujui: r.nominal_disetujui !== null ? Number(r.nominal_disetujui) : null,
     metodeBayar: r.metode_bayar, periodeGaji: r.periode_gaji, tglBayar: r.tgl_bayar,
     bankNama: r.bank_nama ?? '', bankRekening: r.bank_rekening ?? '', bankAtasNama: r.bank_atas_nama ?? '',
-    tglAjukan: r.created_at, bukti: await berkasUntuk('reimburse', r.id),
+    tglAjukan: r.created_at, buktiLink: r.bukti_link ?? '', bukti: await berkasUntuk('reimburse', r.id),
   };
 }
 const SQL_RB = `SELECT r.*, u.nama, u.nik, u.bank_nama, u.bank_rekening, u.bank_atas_nama, c.nama cnama
@@ -29,6 +31,7 @@ async function rbAmbil(id: number) {
 export const aksiReimburse: KumpulanAksi = {
   async rb_ajukan(m) {
     const u = await need();
+    const buktiLink = validasiLinkBukti(m);
     const kat = s(m, 'kategori');
     if (!(await settingsPublik()).reimburseKategori.includes(kat)) gagal('Pilih kategori reimburse');
     const tgl = s(m, 'tanggal'), hariIni = tglWIB();
@@ -40,12 +43,11 @@ export const aksiReimburse: KumpulanAksi = {
     if (nominal <= 0 || nominal > 1000000000) gagal('Nominal tidak sah');
     const ket = s(m, 'keterangan');
     if (ket === '') gagal('Keterangan wajib diisi');
-    const bukti = m.bukti;
-    if (!Array.isArray(bukti) || bukti.length < 1) gagal('Lampirkan minimal satu foto nota / bukti pembayaran');
+    const bukti = Array.isArray(m.bukti) ? m.bukti : [];
     if (bukti.length > 5) gagal('Maksimal 5 lampiran per klaim');
     const rid = await transaksi(async () => {
-      const r = await exec('INSERT INTO reimburse (user_id,kategori,kegiatan,tanggal,nominal,keterangan) VALUES (?,?,?,?,?,?)',
-        [u.id, kat, s(m, 'kegiatan').slice(0, 150), tgl, nominal, ket.slice(0, 255)]);
+      const r = await exec('INSERT INTO reimburse (user_id,kategori,kegiatan,tanggal,nominal,keterangan,bukti_link) VALUES (?,?,?,?,?,?,?)',
+        [u.id, kat, s(m, 'kegiatan').slice(0, 150), tgl, nominal, ket.slice(0, 255), buktiLink]);
       for (const [n, bk] of bukti.entries()) {
         // {data,nama} atau data URL langsung
         const data = typeof bk === 'object' && bk ? String(bk.data ?? '') : String(bk), nm = typeof bk === 'object' && bk ? String(bk.nama ?? '') : '';
@@ -68,12 +70,18 @@ export const aksiReimburse: KumpulanAksi = {
   },
   async rb_daftar(m) {
     await need(['admin', 'direktur', 'finance']);
-    const status = s(m, 'status', 'ALL'), bl = s(m, 'bulan');
-    let sql = SQL_RB + ' WHERE 1';
-    const prm: unknown[] = [];
-    if (status !== 'ALL') { sql += ' AND r.status=?'; prm.push(status); }
-    if (bl) { if (!periodeSah(bl)) gagal('Bulan tidak sah'); sql += " AND DATE_FORMAT(r.tanggal,'%Y-%m')=?"; prm.push(bl); }
-    return Promise.all((await q(sql + ' ORDER BY r.id DESC LIMIT 300', prm)).map(rbRow));
+    const status = s(m, 'status', 'ALL'), bl = s(m, 'bulan'), h = paramHalaman(m);
+    let where = ' WHERE 1'; const prm: unknown[] = [];
+    if (status !== 'ALL') { where += ' AND r.status=?'; prm.push(status); }
+    if (bl) { if (!periodeSah(bl)) gagal('Bulan tidak sah'); where += " AND DATE_FORMAT(r.tanggal,'%Y-%m')=?"; prm.push(bl); }
+    if (h.cari) { where += ' AND (u.nama LIKE ? OR u.nik LIKE ? OR r.kategori LIKE ? OR r.kegiatan LIKE ? OR r.keterangan LIKE ?)'; prm.push(...Array(5).fill(polaCari(h.cari))); }
+    const total = Number(await nilai('SELECT COUNT(*)' + SQL_RB.slice(SQL_RB.indexOf(' FROM ')) + where, prm));
+    const rows = await q(SQL_RB + where + ' ORDER BY r.id DESC' + (m.all ? '' : ' LIMIT ? OFFSET ?'), m.all ? prm : [...prm, h.limit, h.offset]);
+    const items = await Promise.all(rows.map(rbRow));
+    if (m.all) return items;
+    const groups = await q(`SELECT r.status, COUNT(*) jumlah, COALESCE(SUM(COALESCE(r.nominal_disetujui,r.nominal)),0) nominal FROM reimburse r GROUP BY r.status`);
+    const stats = Object.fromEntries(groups.map((g) => [g.status, { jumlah: Number(g.jumlah), nominal: Number(g.nominal) }]));
+    return { ...hasilHalaman(items, total, h.page), stats };
   },
   async rb_putus_hr(m) {
     const u = await need(['admin', 'direktur']);

@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { isDir, useAplikasi } from '@/components/Aplikasi';
 import { Ikon } from '@/components/Ikon';
+import { NavigasiHalaman } from '@/components/NavigasiHalaman';
 import { PilihPeta } from '@/components/PilihPeta';
 import { api } from '@/lib/klien/api';
 import { berkasPng } from '@/lib/klien/berkas';
@@ -112,31 +113,33 @@ function Keuangan() {
 function LokasiKantor() {
   const { settings: s, bukaSheet, tutupSheet } = useAplikasi();
   const simpan = useSimpan();
-  const [geo, setGeo] = useState(!!s.geofenceOn), [rad, setRad] = useState(s.radius);
+  const [rad, setRad] = useState(s.radius);
   const titik = (lat: number, lng: number) => { simpan({ office_lat: lat, office_lng: lng, radius: rad || 200 }, 'Titik kantor tersimpan'); tutupSheet(); };
   return (
     <div className="card"><h3><Ikon n="map-pin" />Batas Lokasi Absen</h3>
-      <Saklar on={geo} set={setGeo} judul="Tolak absen di luar radius" ket='Jika mati, absen tetap tercatat namun ditandai "luar area"' />
+      <div className="note"><b>Absen di luar radius tetap dapat dikirim.</b> HC akan mendapat penanda peringatan pada Rekap Absensi dan dashboard.</div>
       <div className="note">{s.officeLat != null ? <>Titik kantor cadangan: <b>{s.officeLat.toFixed(6)}, {s.officeLng.toFixed(6)}</b> · radius {s.radius} m</>
         : 'Titik setiap lokasi diatur di menu Lokasi Kerja. Titik cadangan di sini dipakai bila lokasi kerja belum punya titik.'}</div>
       <label>Radius cadangan (meter)</label><input type="number" min={20} max={5000} value={rad} onChange={(e) => setRad(+e.target.value)} />
       <button className="btn ghost" onClick={() => bukaSheet(<PilihPeta judul="Titik Kantor Cadangan" lat={s.officeLat} lng={s.officeLng} radius={rad || 200} simpan={titik} />)}>
         <Ikon n="map-pin" />Pilih Titik di Peta</button>
-      <button className="btn" onClick={() => { simpan({ radius: rad || 200, geofence_on: geo }, 'Pengaturan lokasi tersimpan'); }}>Simpan</button>
+      <button className="btn" onClick={() => { simpan({ radius: rad || 200 }, 'Pengaturan lokasi tersimpan'); }}>Simpan</button>
     </div>
   );
 }
 
 function LogAktivitas() {
-  const [log, setLog] = useState<Data[] | null>(null);
-  useEffect(() => { api<Data[]>('adm_log', {}, true).then(setLog).catch(() => setLog([])); }, []);
+  const [log, setLog] = useState<Data | null>(null), [cari, setCari] = useState(''), [page, setPage] = useState(1);
+  useEffect(() => { setLog(null); api<Data>('adm_log', { search: cari, page }, true).then(setLog).catch(() => setLog(null)); }, [cari, page]);
   return (
-    <div className="card"><h3><Ikon n="history" />Log Aktivitas <span className="m">(200 terakhir)</span></h3>
+    <div className="card"><h3><Ikon n="history" />Log Aktivitas</h3>
+      <input placeholder="Cari pengguna / aksi / keterangan" value={cari} onChange={(e) => { setCari(e.target.value); setPage(1); }} />
       {!log ? <div className="skel" style={{ height: 120 }} /> : (
         <div className="tblwrap"><table><thead><tr><th>Waktu</th><th>Pengguna</th><th>Aksi</th><th>Keterangan</th><th>IP</th></tr></thead><tbody>
-          {log.map((l) => <tr key={l.id}><td>{l.created_at}</td><td>{l.nama ? `${l.nama} (${l.nik})` : '-'}</td><td><code>{l.aksi}</code></td>
+          {log.items.map((l: Data) => <tr key={l.id}><td>{l.created_at}</td><td>{l.nama ? `${l.nama} (${l.nik})` : '-'}</td><td><code>{l.aksi}</code></td>
             <td style={{ whiteSpace: 'normal', minWidth: 220 }}>{l.keterangan}</td><td className="tiny muted">{l.ip}</td></tr>)}
         </tbody></table></div>)}
+      {log && <NavigasiHalaman page={log.page} total={log.total} totalPages={log.totalPages} ubah={setPage} />}
     </div>
   );
 }

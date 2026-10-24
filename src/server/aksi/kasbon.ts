@@ -7,11 +7,13 @@ import { setg, setgInt } from '@/lib/pengaturan';
 import { periodeBerikut, periodeSah, periodeTerkunci, uang } from '@/lib/periode';
 import { POLA_TGL, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
+import { simpanBuktiPengajuan, validasiLinkBukti } from './bukti';
+import { hasilHalaman, paramHalaman, polaCari } from '@/lib/paginasi';
 
 async function ksRow(k: Baris, denganBayar = false) {
   const r: Baris = {
     id: k.id, userId: k.user_id, nama: k.nama ?? '', nik: k.nik ?? '', nominal: Number(k.nominal), tenor: k.tenor, cicilan: Number(k.cicilan),
-    alasan: k.alasan, status: k.status, hrOleh: k.hr_oleh, hrCatatan: k.hr_catatan, tglHr: k.tgl_hr,
+    alasan: k.alasan, buktiLink: k.bukti_link ?? '', status: k.status, hrOleh: k.hr_oleh, hrCatatan: k.hr_catatan, tglHr: k.tgl_hr,
     finOleh: k.fin_oleh, finCatatan: k.fin_catatan, tglFin: k.tgl_fin, tglCair: k.tgl_cair, mulaiPotong: k.mulai_potong,
     terbayar: Number(k.terbayar), sisa: Math.max(0, Number(k.nominal) - Number(k.terbayar)), tglAjukan: k.created_at,
   };
@@ -28,6 +30,7 @@ async function ksAmbil(id: number) {
 export const aksiKasbon: KumpulanAksi = {
   async ks_ajukan(m) {
     const u = await need();
+    validasiLinkBukti(m);
     const nominal = uang(m, 'nominal'), tenor = i(m, 'tenor', 1), alasan = s(m, 'alasan');
     const tenorMaks = await setgInt('kasbon_tenor_maks', 12);
     if (nominal < 10000) gagal('Nominal kasbon minimal Rp10.000');
@@ -41,7 +44,9 @@ export const aksiKasbon: KumpulanAksi = {
     if (kali > 0 && gapok <= 0) gagal('Data gaji Anda belum diatur HC, jadi batas kasbon belum bisa dihitung. Hubungi HC.');
     if (kali > 0 && nominal > gapok * kali) gagal(`Nominal melebihi batas kasbon (${rupiah(Math.trunc(gapok * kali))})`);
     const cicilan = Math.ceil(nominal / tenor);
-    await exec('INSERT INTO kasbon (user_id,nominal,tenor,cicilan,alasan) VALUES (?,?,?,?,?)', [u.id, nominal, tenor, cicilan, alasan.slice(0, 255)]);
+    const ins = await exec('INSERT INTO kasbon (user_id,nominal,tenor,cicilan,alasan) VALUES (?,?,?,?,?)', [u.id, nominal, tenor, cicilan, alasan.slice(0, 255)]);
+    const buktiLink = await simpanBuktiPengajuan(m, u, 'kasbon', ins.insertId);
+    if (buktiLink) await exec('UPDATE kasbon SET bukti_link=? WHERE id=?', [buktiLink, ins.insertId]);
     await logAksi(u.id, 'ajukan_kasbon', `${rupiah(nominal)} / ${tenor} bln`);
     return { pesan: `Pengajuan kasbon terkirim. Cicilan ${rupiah(cicilan)}/bulan setelah disetujui.` };
   },
@@ -57,10 +62,17 @@ export const aksiKasbon: KumpulanAksi = {
   },
   async ks_daftar(m) {
     await need(['admin', 'direktur', 'finance']);
-    const status = s(m, 'status', 'ALL');
-    const rows = await q('SELECT k.*, u.nama, u.nik FROM kasbon k JOIN users u ON u.id=k.user_id' + (status !== 'ALL' ? ' WHERE k.status=?' : '') + ' ORDER BY k.id DESC LIMIT 300',
-      status !== 'ALL' ? [status] : []);
-    return Promise.all(rows.map((k) => ksRow(k, true)));
+    const status = s(m, 'status', 'ALL'), h = paramHalaman(m), cond: string[] = [], params: unknown[] = [];
+    if (status !== 'ALL') { cond.push('k.status=?'); params.push(status); }
+    if (h.cari) { cond.push('(u.nama LIKE ? OR u.nik LIKE ? OR k.alasan LIKE ?)'); params.push(...Array(3).fill(polaCari(h.cari))); }
+    const where = cond.length ? ' WHERE ' + cond.join(' AND ') : '', from = ' FROM kasbon k JOIN users u ON u.id=k.user_id';
+    const total = Number(await nilai('SELECT COUNT(*)' + from + where, params));
+    const rows = await q('SELECT k.*, u.nama, u.nik' + from + where + ' ORDER BY k.id DESC' + (m.all ? '' : ' LIMIT ? OFFSET ?'), m.all ? params : [...params, h.limit, h.offset]);
+    const items = await Promise.all(rows.map((k) => ksRow(k, true)));
+    if (m.all) return items;
+    const groups = await q('SELECT status, COUNT(*) jumlah, COALESCE(SUM(nominal-terbayar),0) sisa FROM kasbon GROUP BY status');
+    const stats = Object.fromEntries(groups.map((g) => [g.status, { jumlah: Number(g.jumlah), sisa: Number(g.sisa) }]));
+    return { ...hasilHalaman(items, total, h.page), stats };
   },
   async ks_putus_hr(m) {
     const u = await need(['admin', 'direktur']);

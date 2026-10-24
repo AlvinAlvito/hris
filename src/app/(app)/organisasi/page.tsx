@@ -1,61 +1,89 @@
 'use client';
-/* Struktur organisasi: pohon atasan–bawahan dari kr_org (ECharts tree, bisa digeser & diperbesar) */
-import { useCallback, useEffect, useState } from 'react';
+/* Struktur organisasi: bagan kartu bertingkat agar tetap terbaca untuk organisasi besar. */
+import { useEffect, useMemo, useState } from 'react';
 import { useAplikasi } from '@/components/Aplikasi';
-import { Grafik, palet } from '@/components/Grafik';
+import { Avatar } from '@/components/Avatar';
 import { Ikon } from '@/components/Ikon';
 import { api } from '@/lib/klien/api';
 
 type Baris = { id: number; nama: string; jabatan: string; dept: string; foto: string; role: string; atasanId: number | null };
-type Simpul = { id?: number; name: string; jab: string; dept?: string; children: Simpul[] };
+type Simpul = { id?: number; nama: string; jabatan: string; dept?: string; foto?: string; children: Simpul[] };
 
 export default function Organisasi() {
   const { settings, galat } = useAplikasi();
-  const [rows, setRows] = useState<Baris[] | null>(null), [tema, setTema] = useState(0), [cari, setCari] = useState('');
+  const [rows, setRows] = useState<Baris[] | null>(null);
+  const [cari, setCari] = useState('');
+  const [tertutup, setTertutup] = useState<Set<number>>(() => new Set());
   useEffect(() => { api<Baris[]>('kr_org', {}, true).then(setRows).catch(galat); }, [galat]);
-  useEffect(() => {
-    const ob = new MutationObserver(() => setTema((t) => t + 1));
-    ob.observe(document.documentElement, { attributes: true, attributeFilter: ['data-mode'] });
-    return () => ob.disconnect();
-  }, []);
 
-  const opsi = useCallback(() => {
-    void tema;
-    const peta = new Map<number, Simpul>(), akar: Simpul[] = [];
-    for (const x of rows!) peta.set(x.id, { id: x.id, name: x.nama, jab: x.jabatan, dept: x.dept, children: [] });
-    for (const x of rows!) {
-      const s = peta.get(x.id)!, a = x.atasanId ? peta.get(x.atasanId) : undefined;
-      if (a && x.atasanId !== x.id) a.children.push(s); else akar.push(s);
+  const akar = useMemo(() => {
+    if (!rows) return [];
+    const peta = new Map<number, Simpul>();
+    for (const x of rows) peta.set(x.id, { id: x.id, nama: x.nama, jabatan: x.jabatan, dept: x.dept, foto: x.foto, children: [] });
+    const hasil: Simpul[] = [];
+    for (const x of rows) {
+      const simpul = peta.get(x.id)!;
+      const atasan = x.atasanId ? peta.get(x.atasanId) : undefined;
+      if (atasan && x.atasanId !== x.id) atasan.children.push(simpul);
+      else hasil.push(simpul);
     }
-    const pusat = akar.length === 1 ? akar[0] : { name: settings.perusahaan, jab: 'Organisasi', children: akar };
-    const q = cari.trim().toLowerCase(), c = palet();
-    const cocok = (s: Simpul) => !!q && (s.name.toLowerCase().includes(q) || (s.jab || '').toLowerCase().includes(q));
-    const tandai = (s: Simpul): any => ({ ...s, itemStyle: cocok(s) ? { borderColor: c.warn, borderWidth: 3 } : undefined, children: s.children.map(tandai) });
-    const esc = (t: string) => t.replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[m]!);
-    return {
-      tooltip: { trigger: 'item', backgroundColor: c.sf, borderColor: c.line, textStyle: { color: c.ink },
-        formatter: (p: any) => `<b>${esc(p.data.name)}</b><br>${esc(p.data.jab || '')}${p.data.dept ? ' · ' + esc(p.data.dept) : ''}` +
-          (p.data.children?.length ? `<br>${p.data.children.length} bawahan langsung` : '') },
-      series: [{ type: 'tree', data: [tandai(pusat)], orient: 'TB', top: 40, bottom: 60, left: 40, right: 40, roam: true, symbol: 'roundRect', symbolSize: [150, 48],
-        initialTreeDepth: q ? -1 : 3, expandAndCollapse: true, animationDurationUpdate: 650, edgeShape: 'polyline',
-        lineStyle: { color: c.p, width: 1.6, opacity: 0.45 },
-        itemStyle: { color: c.sf, borderColor: c.p, borderWidth: 1.5, shadowBlur: 14, shadowColor: 'rgba(0,0,0,.12)' },
-        label: { position: 'inside', formatter: (p: any) => `{n|${p.data.name.slice(0, 22)}}\n{j|${String(p.data.jab || '').slice(0, 26)}}`,
-          rich: { n: { fontWeight: 800, fontSize: 12, color: c.ink, fontFamily: 'Jakarta' }, j: { fontSize: 10.5, color: c.mut, padding: [3, 0, 0, 0], fontFamily: 'Jakarta' } } },
-        leaves: { label: { position: 'inside' } },
-        emphasis: { focus: 'descendant', itemStyle: { borderColor: c.p2, borderWidth: 2.5 } } }],
+    const urutkan = (daftar: Simpul[]) => {
+      daftar.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
+      daftar.forEach((x) => urutkan(x.children));
     };
-  }, [rows, settings.perusahaan, cari, tema]);
+    urutkan(hasil);
+    return hasil.length === 1 ? hasil : [{ nama: settings.perusahaan, jabatan: 'Organisasi', children: hasil }];
+  }, [rows, settings.perusahaan]);
+
+  const semuaId = useMemo(() => {
+    const ids: number[] = [];
+    const jelajah = (n: Simpul) => { if (n.id && n.children.length) ids.push(n.id); n.children.forEach(jelajah); };
+    akar.forEach(jelajah);
+    return ids;
+  }, [akar]);
+  const q = cari.trim().toLocaleLowerCase('id');
+  const cocok = (n: Simpul): boolean => [n.nama, n.jabatan, n.dept ?? ''].some((v) => v.toLocaleLowerCase('id').includes(q)) || n.children.some(cocok);
+  const hasilCari = akar.filter((n) => !q || cocok(n));
+
+  const ubahCabang = (id: number) => setTertutup((s) => {
+    const baru = new Set(s);
+    if (baru.has(id)) baru.delete(id); else baru.add(id);
+    return baru;
+  });
 
   return (<>
-    <div className="page-head"><div><h2 style={{ margin: 0 }}>Struktur Organisasi</h2>
-      <div className="muted small">{rows ? rows.length + ' orang · ' : ''}geser untuk berpindah, cubit/scroll untuk memperbesar, klik kotak untuk buka/tutup cabang</div></div>
-      <div style={{ position: 'relative', minWidth: 220 }}><input placeholder="Sorot nama / jabatan…" value={cari} onChange={(e) => setCari(e.target.value)} style={{ paddingLeft: 36 }} />
-        <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }}><Ikon n="search" /></span></div></div>
-    <div className="card" style={{ padding: 8 }}>
-      {rows ? <Grafik opsi={rows.length ? opsi : null} kosong="Belum ada data karyawan" className="chart" />
-        : <div className="skel" style={{ height: '70vh' }} />}
+    <div className="page-head org-head"><div><h2 style={{ margin: 0 }}>Struktur Organisasi</h2>
+      <div className="muted small">{rows ? `${rows.length} orang · ` : ''}gunakan tombol jumlah bawahan untuk membuka atau menutup cabang.</div></div>
+      <div className="org-tools">
+        <div className="org-search"><input placeholder="Cari nama, jabatan, atau divisi…" value={cari} onChange={(e) => setCari(e.target.value)} />
+          <Ikon n="search" /></div>
+        <button className="btn sm ghost auto" disabled={!semuaId.length || !!q} onClick={() => setTertutup(new Set())}>Buka semua</button>
+        <button className="btn sm ghost auto" disabled={!semuaId.length || !!q} onClick={() => setTertutup(new Set(semuaId))}>Tutup semua</button>
+      </div></div>
+    <div className="card org-card">
+      {!rows ? <div className="skel" style={{ height: 240 }} />
+        : !rows.length ? <div className="empty">Belum ada data karyawan.</div>
+          : q && !hasilCari.length ? <div className="empty">Tidak ada karyawan yang cocok dengan pencarian.</div>
+            : <div className="org-tree">{hasilCari.map((n, i) => <SimpulOrganisasi key={n.id ?? `org-${i}`} n={n} q={q} tertutup={tertutup} ubah={ubahCabang} cocok={cocok} />)}</div>}
     </div>
-    <style>{'.card .chart{height:72vh;min-height:420px}'}</style>
   </>);
+}
+
+function SimpulOrganisasi({ n, q, tertutup, ubah, cocok }: {
+  n: Simpul; q: string; tertutup: Set<number>; ubah: (id: number) => void; cocok: (n: Simpul) => boolean;
+}) {
+  const punyaBawahan = n.children.length > 0;
+  const buka = punyaBawahan && (!n.id || !tertutup.has(n.id) || (!!q && cocok(n)));
+  const sorot = !!q && [n.nama, n.jabatan, n.dept ?? ''].some((v) => v.toLocaleLowerCase('id').includes(q));
+  const anak = n.children.filter((x) => !q || cocok(x));
+  return <section className="org-node">
+    <div className={'org-person' + (sorot ? ' match' : '')}>
+      {n.id ? <Avatar u={{ nama: n.nama, foto: n.foto }} ukuran={38} /> : <span className="org-root-icon"><Ikon n="network" /></span>}
+      <div className="org-ident"><div className="org-name">{n.nama}</div>
+        <div className="org-meta">{n.jabatan || 'Jabatan belum diisi'}{n.dept ? ` · ${n.dept}` : ''}</div></div>
+      {punyaBawahan && n.id && <button type="button" className="org-toggle" aria-expanded={buka} disabled={!!q} title={q ? 'Hapus pencarian untuk menutup cabang' : undefined} onClick={() => ubah(n.id!)}>
+        <Ikon n={buka ? 'chevron-down' : 'chevron-right'} />{n.children.length} bawahan</button>}
+    </div>
+    {buka && anak.length > 0 && <div className="org-children">{anak.map((x) => <SimpulOrganisasi key={x.id} n={x} q={q} tertutup={tertutup} ubah={ubah} cocok={cocok} />)}</div>}
+  </section>;
 }

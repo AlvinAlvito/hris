@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
-import { isDir, useAplikasi } from '@/components/Aplikasi';
+import { useRouter } from 'next/navigation';
+import { isDir, useAplikasi, type Me } from '@/components/Aplikasi';
 import { Avatar } from '@/components/Avatar';
 import { BadgeStatusKerja } from '@/components/BadgeStatusKerja';
 import { DaftarDokumen } from '@/components/Dokumen';
@@ -12,6 +13,7 @@ import { bacaBerkas } from '@/lib/klien/berkas';
 import { FIELD_BIO, STATUS_KERJA } from '@/lib/klien/biodata';
 import { keExcel } from '@/lib/klien/excel';
 import { labelRole, masaKerjaTeks, tglPendek, todayStr } from '@/lib/klien/format';
+import { normalisasiNomorWhatsApp } from '@/lib/telepon';
 
 type Data = Record<string, any>;
 
@@ -62,15 +64,18 @@ export default function Karyawan() {
         <button className="btn sm ghost" onClick={ekspor}><Ikon n="download" />Export Excel</button>
       </div>
       {!list ? <div className="skel" style={{ height: 160, marginTop: 12 }} /> : (
-        <div className="tblwrap"><table><thead><tr><th>NIK</th><th>Nama</th><th>Status</th><th>Lokasi Kerja</th><th>Pola Jam</th><th>Divisi</th>
+        <div className="tblwrap"><table><thead><tr><th>NIK</th><th>Nama</th><th>WhatsApp</th><th>Status</th><th>Lokasi Kerja</th><th>Pola Jam</th><th>Divisi</th>
           <th>Masuk Kerja</th><th>Hak Cuti</th><th>Sisa/Jatah</th><th>Mode Absen</th><th>Peran</th><th></th></tr></thead>
           <tbody>{tampil.map((u) => {
             const atasan = u.atasanId ? list.find((x) => x.id === u.atasanId)?.nama : '';
+            const wa = normalisasiNomorWhatsApp(u.noHp);
             return (
               <tr key={u.id}>
                 <td><b>{u.nik}</b></td>
                 <td><div className="orang" style={{ cursor: 'pointer' }} onClick={() => profil(u.id)}><Avatar u={u} ukuran={34} />
                   <div><b>{u.nama}</b><div className="tiny muted">{u.jabatan}{atasan && ' · atasan ' + atasan}</div></div></div></td>
+                <td>{wa ? <a className="btn icon ghost" href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer"
+                  aria-label={`WhatsApp ${u.nama}`} title={`WhatsApp ${u.noHp}`} style={{ color: '#25d366' }}><Ikon n="whatsapp" /></a> : <span className="muted" title="Nomor WhatsApp belum diisi">—</span>}</td>
                 <td><BadgeStatusKerja u={u} /></td>
                 <td>{u.cabangNama ? <>{u.cabangNama}{u.cabangTipe === 'pusat' && <> <span className="badge b-purple">Pusat</span></>}</> : <span className="badge b-red">belum diatur</span>}</td>
                 <td>{u.jamMode === 'shift' ? <><span className="badge b-blue">Shift</span><div className="tiny muted">{u.shiftNama || 'belum diatur'}</div></>
@@ -85,7 +90,7 @@ export default function Karyawan() {
                 <td>{u.lokasiMode === 'lapangan' ? <span className="badge b-purple">Lapangan {String(u.minJarakKm).replace('.', ',')} km</span>
                   : u.lokasiMode === 'bebas' ? <span className="badge b-gray">Bebas</span> : <span className="badge b-blue">Kantor</span>}</td>
                 <td>{!u.aktif ? <span className="badge b-red">Nonaktif</span> : <span className="badge b-blue">{labelRole(u.role)}</span>}</td>
-                <td><button className="btn sm auto ghost" onClick={() => form(u)}>Edit</button></td>
+                <td><div className="row" style={{ gap: 6 }}><TombolMasukSebagai u={u} ringkas /><button className="btn sm auto ghost" onClick={() => form(u)}>Edit</button></div></td>
               </tr>);
           })}</tbody></table></div>)}
       <div className="tiny muted" style={{ marginTop: 8 }}>Hak cuti <b>Otomatis</b> aktif sendiri setelah 12 bulan kerja. <b>Mode Lapangan</b>: absen terbuka hanya setelah menjauh sekian km dari titik awal.
@@ -122,9 +127,26 @@ function ProfilKaryawan({ id, edit }: { id: number; edit: (u: Data) => void }) {
     </div>
     <div className="row" style={{ marginTop: 12 }}>
       <button className="btn ghost" onClick={tutupSheet}>Tutup</button>
+      <TombolMasukSebagai u={u} />
       <button className="btn" onClick={() => api<Data[]>('adm_users', {}, true).then((l) => edit(l.find((x) => x.id === u.id)!)).catch(galat)}><Ikon n="pencil" />Edit data</button>
     </div>
   </>);
+}
+
+function TombolMasukSebagai({ u, ringkas = false }: { u: Data; ringkas?: boolean }) {
+  const { me, setMe, tutupSheet, yakin, galat } = useAplikasi();
+  const router = useRouter();
+  if (me?.role !== 'direktur' || u.role !== 'karyawan' || !u.aktif) return null;
+  const masuk = async () => {
+    if (!(await yakin(`Masuk sebagai ${u.nama}?`, 'Aplikasi akan memakai hak akses akun karyawan ini. Anda dapat kembali ke Super Admin dari banner di bagian atas halaman.', { ya: 'Masuk sebagai karyawan' }))) return;
+    try {
+      const r = await api<{ me: Me }>('impersonasi_masuk', { id: u.id }, true);
+      setMe(r.me); tutupSheet(); router.replace('/beranda');
+    } catch (e) { galat(e); }
+  };
+  return <button className={'btn sm auto ghost' + (ringkas ? '' : ' soft')} title={`Masuk sebagai ${u.nama}`} onClick={masuk}>
+    <Ikon n="user" />{ringkas ? 'Masuk' : 'Masuk sebagai'}
+  </button>;
 }
 
 /* ---------- form tambah / edit karyawan ---------- */

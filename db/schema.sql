@@ -170,6 +170,7 @@ CREATE TABLE IF NOT EXISTS pengajuan (
   jam_selesai   TIME NULL,
   menit         INT NOT NULL DEFAULT 0,  -- durasi lembur yang diajukan
   alasan        VARCHAR(255) NOT NULL DEFAULT '',
+  bukti_link    VARCHAR(1000) NOT NULL DEFAULT '',
   status        ENUM('Menunggu Rekomendasi','Menunggu HR','Disetujui','Ditolak Kepala Toko','Ditolak HR','Dibatalkan')
                 NOT NULL DEFAULT 'Menunggu HR',
   rekomendasi   ENUM('','Direkomendasikan','Tidak Direkomendasikan') NOT NULL DEFAULT '',
@@ -195,6 +196,7 @@ CREATE TABLE IF NOT EXISTS tukar_jadwal (
   rekan_id      INT  NOT NULL,
   tgl_rekan     DATE NOT NULL,
   alasan        VARCHAR(255) NOT NULL DEFAULT '',
+  bukti_link    VARCHAR(1000) NOT NULL DEFAULT '',
   status        ENUM('Menunggu Rekan','Menunggu Rekomendasi','Menunggu HR','Disetujui','Ditolak Rekan','Ditolak Kepala Toko','Ditolak HR','Dibatalkan')
                 NOT NULL DEFAULT 'Menunggu Rekan',
   rekomendasi   ENUM('','Direkomendasikan','Tidak Direkomendasikan') NOT NULL DEFAULT '',
@@ -225,6 +227,7 @@ CREATE TABLE IF NOT EXISTS cuti (
   selesai     DATE NOT NULL,
   hari        INT  NOT NULL,
   alasan      TEXT NOT NULL,
+  bukti_link  VARCHAR(1000) NOT NULL DEFAULT '',
   status      ENUM('Menunggu','Disetujui','Ditolak','Dibatalkan') NOT NULL DEFAULT 'Menunggu',
   approver    VARCHAR(150) NOT NULL DEFAULT '',
   catatan     TEXT NULL,
@@ -244,6 +247,7 @@ CREATE TABLE IF NOT EXISTS ketidakhadiran (
   jenis         ENUM('sakit','izin','keperluan','libur','lainnya','setengah_hari','wfh','dlk') NOT NULL DEFAULT 'izin',
   sesi          ENUM('','pagi','siang') NOT NULL DEFAULT '',    -- khusus izin setengah hari
   alasan        VARCHAR(255) NOT NULL DEFAULT '',
+  bukti_link    VARCHAR(1000) NOT NULL DEFAULT '',
   status        ENUM('Menunggu Rekomendasi','Menunggu HR','Disetujui','Ditolak Kepala Toko','Ditolak HR','Dibatalkan')
                 NOT NULL DEFAULT 'Menunggu HR',
   rekomendasi   ENUM('','Direkomendasikan','Tidak Direkomendasikan') NOT NULL DEFAULT '',
@@ -324,6 +328,7 @@ CREATE TABLE IF NOT EXISTS reimburse (
   tanggal       DATE NOT NULL,                      -- tanggal transaksi pada nota
   nominal       BIGINT NOT NULL,
   keterangan    VARCHAR(255) NOT NULL DEFAULT '',
+  bukti_link    VARCHAR(1000) NOT NULL DEFAULT '',
   status        ENUM('Menunggu HR','Menunggu Finance','Disetujui','Dibayar','Ditolak HR','Ditolak Finance','Dibatalkan')
                 NOT NULL DEFAULT 'Menunggu HR',
   hr_oleh       VARCHAR(150) NOT NULL DEFAULT '',
@@ -351,6 +356,7 @@ CREATE TABLE IF NOT EXISTS kasbon (
   tenor         INT NOT NULL DEFAULT 1,             -- jumlah bulan cicilan
   cicilan       BIGINT NOT NULL,                    -- potongan per bulan
   alasan        VARCHAR(255) NOT NULL DEFAULT '',
+  bukti_link    VARCHAR(1000) NOT NULL DEFAULT '',
   status        ENUM('Menunggu HR','Menunggu Finance','Aktif','Lunas','Ditolak HR','Ditolak Finance','Dibatalkan')
                 NOT NULL DEFAULT 'Menunggu HR',
   hr_oleh       VARCHAR(150) NOT NULL DEFAULT '',

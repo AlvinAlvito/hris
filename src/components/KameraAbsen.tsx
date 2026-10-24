@@ -85,8 +85,7 @@ export function KameraAbsen({ mode, izin, selesai }: Props) {
       else {
         const d = jarakMeter(pos.lat, pos.lng, oLat, oLng);
         if (d <= rad) setLokasi({ boleh: true, kelas: 'ok', alasan: '', pesan: `Di dalam area ${nama} · ${d} m dari titik lokasi${acc}` });
-        else if (settings.geofenceOn) setLokasi({ boleh: false, kelas: 'bad', alasan: 'di luar area ' + nama, pesan: `Di luar area ${nama}. Jarak ${km(d)}, batas ${rad} m.` });
-        else setLokasi({ boleh: true, kelas: 'wait', alasan: '', pesan: `Di luar area ${nama} (${km(d)}). Absen tetap dicatat & ditandai.` });
+        else setLokasi({ boleh: true, kelas: 'wait', alasan: '', pesan: `Peringatan: di luar area ${nama} (${km(d)} dari lokasi, batas ${rad} m). Absensi tetap dapat dikirim dan akan ditandai untuk HC.` });
       }
     } else setLokasi({ boleh: true, kelas: 'ok', alasan: '', pesan: `Mode bebas — lokasi direkam${acc}.` });
   }, [pos, me, settings, izin]);
@@ -149,7 +148,7 @@ export function KameraAbsen({ mode, izin, selesai }: Props) {
   const siap = (!settings.wajibFoto || !!foto) && lokasi.boleh;
 
   return (
-    <>
+    <div className="kamera-absen">
       <h3 suppressHydrationWarning>{judul} — {jamStr()}</h3>
       <div className="muted small" style={{ marginBottom: 10 }}>{tglIndo(todayStr())}</div>
       <div className="camwrap">
@@ -175,6 +174,6 @@ export function KameraAbsen({ mode, izin, selesai }: Props) {
       <button className={'btn ' + (mode === 'in' ? 'green' : 'red')} disabled={!siap || kirim} onClick={simpan}>
         {kirim ? <><span className="spin" /> Mengirim…</> : !lokasi.boleh ? 'Terkunci — ' + lokasi.alasan : 'Simpan ' + judul}
       </button>
-    </>
+    </div>
   );
 }

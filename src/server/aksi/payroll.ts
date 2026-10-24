@@ -17,6 +17,7 @@ import { bendera, hariDalamBulan, periodeAkhir, periodeAwal, periodeSah, uang } 
 import { hitungBPJS, kategoriTER, pph21Tahunan, pph21TER, tarifTER, upahLembur, bulat, type SetelanBpjs } from '@/lib/pph21';
 import { hitungStatus, statusHarian } from '@/lib/statusHarian';
 import { selisihHari, tglWIB } from '@/lib/waktu';
+import { hasilHalaman, paramHalaman } from '@/lib/paginasi';
 import type { KumpulanAksi } from '../daftar';
 
 const PERAN_PAYROLL = ['admin', 'finance', 'direktur'];
@@ -403,9 +404,16 @@ export const aksiPayroll: KumpulanAksi = {
   },
 
   /* ---------- slip untuk karyawan ---------- */
-  async py_slip_saya() {
+  async py_slip_saya(m) {
     const u = await need();
-    return (await q(SQL_SLIP + " WHERE s.user_id=? AND p.status='final' ORDER BY p.periode DESC LIMIT 36", [u.id])).map((r) => slipRow(r, false));
+    const pg = paramHalaman(m);
+    let where = " WHERE s.user_id=? AND p.status='final'";
+    const args: any[] = [u.id];
+    const cari = pg.cari.replace(/[\\%_]/g, '');
+    if (cari) { where += ' AND p.periode LIKE ?'; args.push(`%${cari}%`); }
+    const count = await q1('SELECT COUNT(*) n FROM payroll_slip s JOIN payroll_periode p ON p.id=s.periode_id' + where, args);
+    const rows = await q(SQL_SLIP + where + ' ORDER BY p.periode DESC LIMIT 8 OFFSET ?', [...args, pg.offset]);
+    return hasilHalaman(rows.map((r) => slipRow(r, false)), Number(count?.n ?? 0), pg.page);
   },
   async py_slip(m) {
     const u = await need();

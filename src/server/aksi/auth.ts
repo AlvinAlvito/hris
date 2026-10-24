@@ -16,6 +16,7 @@ export const aksiAuth: KumpulanAksi = {
     if (u.aktif !== 1) gagal('Akun nonaktif, hubungi HC');
     if (!(await bcrypt.compare(pin, u.pin_hash))) { await logAksi(u.id, 'login_gagal'); gagal('PIN salah'); }
     const ss = await sesi();
+    delete ss.superadminUid;
     ss.uid = u.id;
     await ss.save();
     await logAksi(u.id, 'login');
@@ -27,6 +28,35 @@ export const aksiAuth: KumpulanAksi = {
     if (u) await logAksi(u.id, 'logout');
     (await sesi()).destroy();
     return { ok: true };
+  },
+
+  async impersonasi_masuk(m) {
+    const admin = await need();
+    if (admin.role !== 'direktur') gagal('Hanya Super Admin yang dapat masuk sebagai karyawan', 403);
+    const ss = await sesi();
+    if (ss.superadminUid) gagal('Anda sedang masuk sebagai karyawan lain');
+    const id = Number(m.id) || 0;
+    if (!id || id === admin.id) gagal('Akun karyawan tidak sah');
+    const target = await q1("SELECT * FROM users WHERE id=? AND aktif=1 AND role='karyawan'", [id]);
+    if (!target) gagal('Karyawan aktif tidak ditemukan');
+    ss.superadminUid = admin.id;
+    ss.uid = target.id;
+    await ss.save();
+    await logAksi(admin.id, 'masuk_sebagai_karyawan', `${target.nama} (${target.nik})`);
+    return { me: await userPublik({ ...target, impersonasi: { id: admin.id, nama: admin.nama } }) };
+  },
+
+  async impersonasi_kembali() {
+    const ss = await sesi();
+    if (!ss.superadminUid) gagal('Sesi ini tidak sedang masuk sebagai karyawan');
+    const admin = await q1("SELECT * FROM users WHERE id=? AND role='direktur' AND aktif=1", [ss.superadminUid]);
+    if (!admin) { ss.destroy(); gagal('Akun Super Admin asal sudah tidak aktif. Silakan masuk ulang.'); }
+    const target = ss.uid ? await q1('SELECT id,nama,nik FROM users WHERE id=?', [ss.uid]) : null;
+    await logAksi(admin.id, 'kembali_dari_akun_karyawan', target ? `${target.nama} (${target.nik})` : 'akun karyawan');
+    delete ss.superadminUid;
+    ss.uid = admin.id;
+    await ss.save();
+    return { me: await userPublik(admin) };
   },
 
   async bootstrap() {

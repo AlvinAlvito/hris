@@ -1,5 +1,5 @@
 'use client';
-/* Dashboard HC: KPI, tren kehadiran 30 hari (3D), komposisi hari ini, per lokasi, jam kerja, terlambat, payroll, reimburse, komposisi SDM, monitoring */
+/* Dashboard HC: KPI, komposisi hari ini, per lokasi, jam kerja, terlambat, payroll, reimburse, komposisi SDM, monitoring */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAplikasi } from '@/components/Aplikasi';
@@ -14,7 +14,7 @@ type Data = Record<string, any>;
 export default function Dashboard() {
   const { inbox, bukaSheet, galat } = useAplikasi();
   const [g, setG] = useState<Data | null>(null), [mon, setMon] = useState<Data | null>(null), [pay, setPay] = useState<Data | null>(null);
-  const [cab, setCab] = useState(0), [mode3d, setMode3d] = useState(true), [putar, setPutar] = useState(true), [gl, setGl] = useState(false), [tema, setTema] = useState(0);
+  const [cab, setCab] = useState(0), [tema, setTema] = useState(0), [mode3d, setMode3d] = useState(true), [putar, setPutar] = useState(true), [gl, setGl] = useState(false);
   useEffect(() => { setGl(adaWebGL()); }, []);
   useEffect(() => {
     api<Data>('dash_grafik', { hari: 30 }, true).then(setG).catch(galat);
@@ -43,16 +43,8 @@ export default function Dashboard() {
       return link ? <Link key={k} href="/persetujuan" className={'kpi ' + w} style={{ textDecoration: 'none', color: 'inherit' }}>{isi}</Link> : <div key={k} className={'kpi ' + w}>{isi}</div>;
     }) : Array.from({ length: 6 }, (_, i) => <div key={i} className="kpi"><div className="skel" style={{ height: 86 }} /></div>)}</div>
 
-    <div className="card hero3d"><div className="page-head" style={{ margin: 0 }}><h3 style={{ margin: 0 }}><Ikon n="atom" />Kehadiran 30 Hari</h3>
-      <div style={{ display: 'flex', gap: 8 }}>
-        {tigaD && <button className="btn ghost sm auto" onClick={() => setPutar(!putar)}><Ikon n="repeat" />{putar ? 'Jeda putar' : 'Putar'}</button>}
-        {gl && <button className="btn ghost sm auto" onClick={() => setMode3d(!mode3d)}><Ikon n="layers" />{mode3d ? 'Tampilan 2D' : 'Tampilan 3D'}</button>}</div></div>
-      <Grafik key={'tren' + tigaD} opsi={o.tren} gl={tigaD} className="chart tinggi" />
-      <div className="legend">{[['Tepat waktu', 'var(--success)'], ['Terlambat', 'var(--warning)'], ['Cuti / izin', 'var(--primary)'], ['Mangkir', 'var(--danger)']].map(([t, c]) =>
-        <span key={t}><i style={{ background: c }} />{t}</span>)}<span className="tiny">Hari libur tidak ditampilkan</span></div>
-    </div>
     <div className="grid-2">
-      <div className="card"><h3><Ikon n="sparkles" />Komposisi Hari Ini</h3><Grafik key={'pie' + tigaD} opsi={o.pie} gl={tigaD} className="chart pendek" />
+      <div className="card"><h3><Ikon n="sparkles" />Komposisi Hari Ini</h3><Grafik opsi={o.pie} className="chart pendek" />
         {h && [['Tepat waktu', h.hadir, 'var(--success)'], ['Terlambat', h.telat, 'var(--warning)'], ['Cuti / izin', h.cuti + h.ket, 'var(--primary)'], ['Libur', h.libur, 'var(--muted)'], ['Belum absen', h.belum, 'var(--danger)']]
           .map(([t, v, c]) => <div key={t as string} className="kv" style={{ padding: '6px 0', borderBottom: '1px dashed var(--line)' }}>
             <span><i style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: c as string, marginRight: 8 }} />{t}</span><b>{v}</b></div>)}</div>
@@ -63,7 +55,11 @@ export default function Dashboard() {
       <div className="card"><h3><Ikon n="clock-alert" />Paling Sering Terlambat <span className="m">bulan ini</span></h3><Grafik opsi={o.telat} kosong="Belum ada keterlambatan bulan ini" className="chart pendek" /></div>
     </div>
     <div className="grid-2">
-      <div className="card"><h3><Ikon n="calculator" />Biaya Payroll <span className="m">per periode</span></h3><Grafik key={'pay' + tigaD} opsi={o.pay} gl={tigaD} kosong="Belum ada data payroll" /></div>
+      <div className="card"><div className="page-head" style={{ margin: 0 }}><h3 style={{ margin: 0 }}><Ikon n="calculator" />Biaya Payroll <span className="m">per periode</span></h3>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {tigaD && <button className="btn ghost sm auto" onClick={() => setPutar(!putar)}><Ikon n="repeat" />{putar ? 'Jeda putar' : 'Putar'}</button>}
+          {gl && <button className="btn ghost sm auto" onClick={() => setMode3d(!mode3d)}><Ikon n="layers" />{mode3d ? 'Tampilan 2D' : 'Tampilan 3D'}</button>}
+        </div></div><Grafik key={'pay' + tigaD} opsi={o.pay} gl={tigaD} kosong="Belum ada data payroll" /></div>
       <div className="card"><h3><Ikon n="receipt" />Reimburse 90 Hari <span className="m">per kategori</span></h3><Grafik opsi={o.rb} kosong="Belum ada reimburse disetujui" /></div>
     </div>
     <div className="grid-3">
@@ -76,6 +72,12 @@ export default function Dashboard() {
       <div className="page-head" style={{ margin: 0 }}><h3 style={{ margin: 0 }}><Ikon n="fingerprint" />Monitoring Hari Ini {mon && <span className="m">{tglIndo(mon.tanggal)}</span>}</h3>
         <select style={{ width: 'auto' }} value={cab} onChange={(e) => setCab(+e.target.value)}><option value={0}>Semua lokasi</option>
           {(mon?.perCabang ?? []).map((c: Data) => <option key={c.id} value={c.id}>{c.nama}</option>)}</select></div>
+      {!!mon?.rows?.filter((r: Data) => r.luar).length && (
+        <Link href="/absensi" className="warn" style={{ display: 'block', marginTop: 12, textDecoration: 'none' }}>
+          <b><Ikon n="circle-alert" /> {mon.rows.filter((r: Data) => r.luar).length} karyawan tercatat absen di luar area kantor.</b>
+          <span className="tiny" style={{ display: 'block', marginTop: 3 }}>Buka Rekap Absensi untuk melihat detail lokasi dan jaraknya.</span>
+        </Link>
+      )}
       {!mon ? <div className="skel" style={{ height: 120, marginTop: 12 }} /> : (
         <div className="tblwrap"><table><thead><tr><th>Karyawan</th><th>Lokasi</th><th>Jadwal</th><th>Status</th><th>Masuk</th><th>Pulang</th><th>Telat</th><th>Jam kerja</th><th>Foto</th></tr></thead><tbody>
           {mon.rows.map((r: Data) => {
@@ -94,10 +96,10 @@ export default function Dashboard() {
   </>);
 }
 
-/* opsi seluruh grafik; dihitung ulang bila data, mode 3D, putar, atau tema berubah */
+/* opsi grafik dihitung ulang bila data atau mode warna berubah */
 function useOpsiGrafik(g: Data | null, pay: Data | null, tigaD: boolean, putar: boolean, tema: number) {
   return useMemo(() => {
-    const kosong = { tren: null, pie: null, lokasi: null, jam: null, telat: null, pay: null, rb: null, dept: null, status: null, jk: null };
+    const kosong = { pie: null, lokasi: null, jam: null, telat: null, pay: null, rb: null, dept: null, status: null, jk: null };
     if (!g || typeof window === 'undefined') return kosong as Record<string, ((e: any) => any) | null>;
     void tema;
     const c = palet();
@@ -105,13 +107,11 @@ function useOpsiGrafik(g: Data | null, pay: Data | null, tigaD: boolean, putar: 
     const dasar = { textStyle: { fontFamily: 'Jakarta', color: c.mut }, grid: { left: 10, right: 14, top: 30, bottom: 10, containLabel: true }, tooltip: { trigger: 'axis', ...tooltip } };
     const sumbu = { axisLine: { lineStyle: { color: c.line } }, axisTick: { show: false }, axisLabel: { color: c.mut, fontFamily: 'Jakarta' }, splitLine: { lineStyle: { color: c.line, type: 'dashed' } } };
     const grad = (e: any, c1: string, c2: string, v = false) => new e.graphic.LinearGradient(0, 0, v ? 0 : 1, v ? 1 : 0, [{ offset: 0, color: c1 }, { offset: 1, color: c2 }]);
-    const status: [string, string, string][] = [['Tepat waktu', 'hadir', c.ok], ['Terlambat', 'telat', c.warn], ['Cuti / izin', 'izin', c.p], ['Mangkir', 'mangkir', c.bad]];
-    const tgl = g.tanggal.map((t: string) => +t.slice(8) + '/' + +t.slice(5, 7));
-    const h = g.hariIni;
     const grid3 = (lebar: number) => ({ boxWidth: lebar, boxDepth: 74, boxHeight: 60, top: -22, splitLine: { lineStyle: { color: c.line, opacity: 0.4 } },
       viewControl: { alpha: 20, beta: 14, distance: 182, autoRotate: putar, autoRotateSpeed: 4, autoRotateAfterStill: 4 },
       light: { main: { intensity: 1.35, shadow: true, alpha: 42, beta: 28 }, ambient: { intensity: 0.42 } }, temporalSuperSampling: { enable: true } });
     const sumbu3 = (data?: string[]) => ({ type: data ? 'category' : 'value', data, name: '', axisLabel: { color: c.mut, fontSize: 10 }, axisLine: { lineStyle: { color: c.line } } });
+    const h = g.hariIni;
     const donat = (data: Data[], warna: string[], mawar = false) => () => ({ tooltip: { trigger: 'item', ...tooltip },
       legend: { bottom: 0, textStyle: { color: c.mut, fontSize: 11 }, itemWidth: 10, itemHeight: 10, type: 'scroll' },
       series: [{ type: 'pie', roseType: mawar ? 'radius' : false, radius: mawar ? ['18%', '72%'] : ['48%', '72%'], center: ['50%', '44%'],
@@ -125,13 +125,6 @@ function useOpsiGrafik(g: Data | null, pay: Data | null, tigaD: boolean, putar: 
     const lblPer = per.map((p: Data) => NAMA_BULAN[+p.periode.slice(5) - 1].slice(0, 3) + ' ' + p.periode.slice(2, 4));
     const rb = g.reimburse;
     return {
-      tren: () => (tigaD ? {
-        tooltip: { formatter: (p: any) => `<b>${g.tanggal[p.value[0]]}</b><br>${status[p.value[1]][0]}: <b>${p.value[2]}</b> orang`, ...tooltip },
-        xAxis3D: sumbu3(tgl), yAxis3D: sumbu3(status.map((s) => s[0])), zAxis3D: sumbu3(), grid3D: grid3(200),
-        series: status.map((s, yi) => ({ type: 'bar3D', name: s[0], shading: 'lambert', bevelSize: 0.35, bevelSmoothness: 3, barSize: [3.2, 7], itemStyle: { color: s[2], opacity: 0.95 },
-          data: g.seri[s[1]].map((v: number, xi: number) => [xi, yi, v]) })),
-      } : { ...dasar, xAxis: { type: 'category', data: tgl, ...sumbu }, yAxis: { type: 'value', ...sumbu },
-        series: status.map((s) => ({ type: 'bar', stack: 'a', name: s[0], data: g.seri[s[1]], itemStyle: { color: s[2], borderRadius: [4, 4, 0, 0] }, barWidth: '58%' })) }),
       pie: dataPie.some((d) => d.value > 0) ? () => ({ tooltip: { trigger: 'item', ...tooltip }, series: [{ type: 'pie', radius: ['52%', '80%'],
         itemStyle: { borderRadius: 8, borderColor: c.sf, borderWidth: 3 }, label: { show: false }, data: dataPie.map((d, i) => ({ ...d, itemStyle: { color: wPie[i] } })) }] }) : null,
       lokasi: (e: any) => ({ ...dasar, grid: { left: 10, right: 40, top: 10, bottom: 10, containLabel: true }, xAxis: { type: 'value', max: (v: any) => Math.max(1, v.max), ...sumbu },

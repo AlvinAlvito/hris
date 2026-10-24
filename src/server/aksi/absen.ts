@@ -1,4 +1,4 @@
-import { exec, q, q1 } from '@/lib/db';
+import { exec, nilai, q, q1 } from '@/lib/db';
 import { f, gagal, i, s } from '@/lib/http';
 import {
   absensiBerjalan, batasJamTerbuka, cabangById, isAdminUp, izinKerja, jadwalHari, jamTeks, jarakMeter, labelKet,
@@ -10,6 +10,7 @@ import { simpanFoto } from '@/lib/berkas';
 import { konteks } from '@/lib/konteks';
 import { detikSekarang, epoch, jamWIB, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
+import { hasilHalaman, paramHalaman, polaCari } from '@/lib/paginasi';
 
 const km = (m: number) => (m / 1000).toFixed(2).replace('.', ',');
 
@@ -19,9 +20,9 @@ export const aksiAbsen: KumpulanAksi = {
     const u = await need();
     const tglNow = tglWIB();
     await tandaiLupaOut(u.id);
-    let today = await q1('SELECT * FROM absensi WHERE user_id=? AND tanggal=?', [u.id, tglNow]);
-    // shift malam: absensi kemarin yang belum ditutup masih dianggap berjalan selama belum lewat batas wajar
-    if (!today) today = await absensiBerjalan(u.id, tglNow);
+    const today = await q1('SELECT * FROM absensi WHERE user_id=? AND tanggal=?', [u.id, tglNow]);
+    // Sesi shift malam tetap bisa ditutup, tetapi tidak ditampilkan sebagai absensi hari ini.
+    const sesiTerbuka = await absensiBerjalan(u.id, tglNow);
     const lupa = (await q(`SELECT tanggal, in_time FROM absensi WHERE user_id=? AND in_time IS NOT NULL
       AND out_time IS NULL AND lupa_out=1 ORDER BY tanggal DESC LIMIT 5`, [u.id]))
       .map((x) => ({ tanggal: x.tanggal, inTime: String(x.in_time).slice(0, 5) }));
@@ -35,6 +36,7 @@ export const aksiAbsen: KumpulanAksi = {
       izinHariIni: { kerjaDari, sesi: sesiIzin },
       me: await userPublik(u),
       hariIni: today ? absRow(today) : null,
+      sesiTerbukaLama: sesiTerbuka && sesiTerbuka.tanggal !== tglNow ? absRow(sesiTerbuka) : null,
       lupaOut: lupa,
       ketHariIni: ket ? { jenis: ket.jenis, jenisLabel: labelKet(ket.jenis), status: ket.status } : null,
       hadir: Number(r?.hadir ?? 0), telat: Number(r?.telat ?? 0),
@@ -91,7 +93,7 @@ export const aksiAbsen: KumpulanAksi = {
         jarak = jarakMeter(lat, lng, oLat, oLng);
         if (jarak > rad) {
           luar = 1;
-          if ((await setgInt('geofence_on', 1)) === 1) gagal(`Absen ditolak: Anda berada ${km(jarak)} km dari ${namaTitik}, batas ${rad} m.`);
+          // Geofence kantor bersifat peringatan. Absensi tetap disimpan dan ditandai melalui `luar`.
         }
       }
     }
@@ -186,7 +188,12 @@ export const aksiAbsen: KumpulanAksi = {
     const u = await need();
     const bl = Math.max(1, Math.min(12, i(m, 'bulan', Number(tglWIB().slice(5, 7)))));
     const th = i(m, 'tahun', Number(tglWIB().slice(0, 4)));
-    return (await q('SELECT * FROM absensi WHERE user_id=? AND YEAR(tanggal)=? AND MONTH(tanggal)=? ORDER BY tanggal DESC', [u.id, th, bl])).map(absRow);
+    const h = paramHalaman(m), filter = h.cari ? ` AND (DATE_FORMAT(tanggal,'%Y-%m-%d') LIKE ? OR CAST(in_time AS CHAR) LIKE ? OR CAST(out_time AS CHAR) LIKE ? OR shift_nama LIKE ?)` : '';
+    const params: unknown[] = [u.id, th, bl];
+    if (h.cari) params.push(polaCari(h.cari), polaCari(h.cari), polaCari(h.cari), polaCari(h.cari));
+    const total = Number(await nilai(`SELECT COUNT(*) FROM absensi WHERE user_id=? AND YEAR(tanggal)=? AND MONTH(tanggal)=?${filter}`, params));
+    const rows = await q(`SELECT * FROM absensi WHERE user_id=? AND YEAR(tanggal)=? AND MONTH(tanggal)=?${filter} ORDER BY tanggal DESC LIMIT ? OFFSET ?`, [...params, h.limit, h.offset]);
+    return hasilHalaman(rows.map(absRow), total, h.page);
   },
 
   /* titik awal karyawan lapangan */

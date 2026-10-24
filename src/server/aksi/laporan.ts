@@ -1,10 +1,11 @@
 /* Laporan HC: absensi per tanggal / rentang tanggal, dan cuti per pegawai */
-import { q, type Baris } from '@/lib/db';
+import { q, q1, type Baris } from '@/lib/db';
 import { gagal, i, s } from '@/lib/http';
 import { cutiAktif, cutiPending, cutiTerpakai, jadwalHari, jatahCuti, KET_TETAP_KERJA, labelKet, need } from '@/lib/aturan';
 import { setg } from '@/lib/pengaturan';
 import { epoch, jamWIB, POLA_TGL, tambahHari, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
+import { hasilHalaman, paramHalaman, polaCari } from '@/lib/paginasi';
 
 export const aksiLaporan: KumpulanAksi = {
   /* status setiap karyawan pada setiap tanggal.
@@ -67,14 +68,29 @@ export const aksiLaporan: KumpulanAksi = {
         });
       }
     }
-    return { dari, sampai, ringkas, baris };
+    const pg = paramHalaman(m), teks = pg.cari.toLowerCase();
+    const cocok = (b: Baris) => {
+      if (teks && !`${b.nama} ${b.nik} ${b.divisi}`.toLowerCase().includes(teks)) return false;
+      const k = String(m.kategori ?? '');
+      if (!k) return true;
+      if (k === 'telat') return Number(b.menitTelat) > 0 && b.kategori === 'hadir';
+      if (k === 'wfh') return b.status === 'WFH';
+      if (k === 'dlk') return b.status === 'Dinas Luar Kota';
+      return b.kategori === k;
+    };
+    const terpilih = baris.filter(cocok);
+    return { dari, sampai, ringkas, baris: m.all ? terpilih : terpilih.slice(pg.offset, pg.offset + 8),
+      page: pg.page, pageSize: 8, total: terpilih.length, totalPages: Math.max(1, Math.ceil(terpilih.length / 8)) };
   },
 
   /* jatah, pemakaian, sisa cuti tahunan & tanggal cuti yang diambil, per pegawai */
   async lap_cuti(m) {
     await need(['admin']);
     const th = i(m, 'tahun', Number(tglWIB().slice(0, 4)));
-    const users = await q("SELECT * FROM users WHERE aktif=1 AND role<>'direktur' ORDER BY dept, nama");
+    const pg = paramHalaman(m), cariSql = pg.cari ? ' AND (nama LIKE ? OR nik LIKE ? OR dept LIKE ?)' : '';
+    const args: any[] = pg.cari ? Array(3).fill(polaCari(pg.cari)) : [];
+    const count = await q1("SELECT COUNT(*) n FROM users WHERE aktif=1 AND role<>'direktur'" + cariSql, args);
+    const users = await q("SELECT * FROM users WHERE aktif=1 AND role<>'direktur'" + cariSql + ' ORDER BY dept, nama' + (m.all ? '' : ' LIMIT 8 OFFSET ?'), m.all ? args : [...args, pg.offset]);
     const detail: Record<number, Baris[]> = {};
     for (const c of await q(`SELECT user_id, jenis, mulai, selesai, hari, alasan, approver FROM cuti
       WHERE status='Disetujui' AND YEAR(mulai)=? ORDER BY mulai`, [th]))
@@ -92,6 +108,6 @@ export const aksiLaporan: KumpulanAksi = {
         setengahHari: iz.setengah_hari ?? 0, wfh: iz.wfh ?? 0, dlk: iz.dlk ?? 0,
       });
     }
-    return hasil;
+    return m.all ? hasil : hasilHalaman(hasil, Number(count?.n ?? 0), pg.page);
   },
 };

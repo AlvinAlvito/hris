@@ -9,6 +9,7 @@ import { setgInt, setSetting, settingsPublik } from '@/lib/pengaturan';
 import { absRow, ambilBiodata, userPublik } from '@/lib/format';
 import { epoch, POLA_JAM, POLA_TGL, sekarangSql, tambahHari, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
+import { hasilHalaman, paramHalaman, polaCari } from '@/lib/paginasi';
 
 const bulanTahun = (m: Record<string, any>) => {
   const k = tglWIB();
@@ -195,11 +196,20 @@ export const aksiAdmin: KumpulanAksi = {
   async adm_absensi(m) {
     await need(['admin']);
     const { bl, th } = bulanTahun(m), uid = i(m, 'userId'), cid = i(m, 'cabangId');
-    let sql = 'SELECT a.*, u.nik,u.nama,u.dept FROM absensi a JOIN users u ON u.id=a.user_id WHERE YEAR(a.tanggal)=? AND MONTH(a.tanggal)=?';
-    const p: unknown[] = [th, bl];
-    if (uid) { sql += ' AND a.user_id=?'; p.push(uid); }
-    if (cid) { sql += ' AND u.cabang_id=?'; p.push(cid); }
-    return (await q(sql + ' ORDER BY a.tanggal DESC, u.nama', p)).map(absRow);
+    const tanggal = s(m, 'tanggal'), mt = /^(\d{4})-(\d{2})-(\d{2})$/.exec(tanggal);
+    const d = mt ? new Date(Date.UTC(+mt[1], +mt[2] - 1, +mt[3])) : null;
+    const tanggalValid = !!mt && d!.getUTCFullYear() === +mt[1] && d!.getUTCMonth() + 1 === +mt[2] && d!.getUTCDate() === +mt[3];
+    const h = paramHalaman(m);
+    let where = ' WHERE ' + (tanggalValid ? 'a.tanggal=?' : 'YEAR(a.tanggal)=? AND MONTH(a.tanggal)=?');
+    const p: unknown[] = tanggalValid ? [tanggal] : [th, bl];
+    if (uid) { where += ' AND a.user_id=?'; p.push(uid); }
+    if (cid) { where += ' AND u.cabang_id=?'; p.push(cid); }
+    if (h.cari) { where += ' AND (u.nama LIKE ? OR u.nik LIKE ? OR u.dept LIKE ?)'; p.push(polaCari(h.cari), polaCari(h.cari), polaCari(h.cari)); }
+    const sumber = ' FROM absensi a JOIN users u ON u.id=a.user_id' + where;
+    const total = Number(await nilai('SELECT COUNT(*)' + sumber, p));
+    const rows = await q('SELECT a.*, u.nik,u.nama,u.dept' + sumber + ' ORDER BY a.tanggal DESC, u.nama' + (m.all ? '' : ' LIMIT ? OFFSET ?'), m.all ? p : [...p, h.limit, h.offset]);
+    const items = rows.map(absRow);
+    return m.all ? items : hasilHalaman(items, total, h.page);
   },
   async adm_lupa_out(m) {
     await need(['admin']);
@@ -305,8 +315,12 @@ export const aksiAdmin: KumpulanAksi = {
     await logAksi(u.id, 'ubah_pengaturan');
     return { settings: await settingsPublik() };
   },
-  async adm_log() {
+  async adm_log(m) {
     await need(['direktur']);
-    return q('SELECT l.*, u.nama, u.nik FROM log_aktivitas l LEFT JOIN users u ON u.id=l.user_id ORDER BY l.id DESC LIMIT 200');
+    const pg = paramHalaman(m), where = pg.cari ? ' WHERE l.aksi LIKE ? OR l.keterangan LIKE ? OR u.nama LIKE ? OR u.nik LIKE ?' : '';
+    const args = pg.cari ? Array(4).fill(polaCari(pg.cari)) : [];
+    const total = await q1('SELECT COUNT(*) n FROM log_aktivitas l LEFT JOIN users u ON u.id=l.user_id' + where, args);
+    const items = await q('SELECT l.*, u.nama, u.nik FROM log_aktivitas l LEFT JOIN users u ON u.id=l.user_id' + where + ' ORDER BY l.id DESC LIMIT 8 OFFSET ?', [...args, pg.offset]);
+    return hasilHalaman(items, Number(total?.n ?? 0), pg.page);
   },
 };

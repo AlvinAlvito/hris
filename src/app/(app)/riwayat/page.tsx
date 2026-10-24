@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useAplikasi } from '@/components/Aplikasi';
 import { Ikon } from '@/components/Ikon';
+import { NavigasiHalaman, type HalamanData } from '@/components/NavigasiHalaman';
 import { useLihatFoto } from '@/components/FotoAbsen';
 import { api } from '@/lib/klien/api';
 import { jamKerjaTeks, km, NAMA_BULAN, tglIndo } from '@/lib/klien/format';
@@ -13,27 +14,30 @@ export default function Riwayat() {
   const kini = new Date();
   const [bulan, setBulan] = useState(kini.getMonth() + 1);
   const [tahun, setTahun] = useState(kini.getFullYear());
-  const [list, setList] = useState<Data[] | null>(null);
+  const [list, setList] = useState<HalamanData<Data> | null>(null);
+  const [cari, setCari] = useState(''), [page, setPage] = useState(1);
   const lihatFoto = useLihatFoto();
-  useEffect(() => { setList(null); api<Data[]>('riwayat', { bulan, tahun }).then(setList).catch(galat); }, [bulan, tahun, galat]);
+  useEffect(() => { setList(null); api<HalamanData<Data>>('riwayat', { bulan, tahun, search: cari, page }).then(setList).catch(galat); }, [bulan, tahun, cari, page, galat]);
+  const rows = list?.items ?? [];
 
   return (
     <div className="sempit">
       <div className="card"><h3><Ikon n="history" />Riwayat Absensi</h3>
         <div className="row">
           <div><label style={{ marginTop: 0 }}>Bulan</label>
-            <select value={bulan} onChange={(e) => setBulan(+e.target.value)}>{NAMA_BULAN.map((n, i) => <option key={n} value={i + 1}>{n}</option>)}</select></div>
+            <select value={bulan} onChange={(e) => { setBulan(+e.target.value); setPage(1); }}>{NAMA_BULAN.map((n, i) => <option key={n} value={i + 1}>{n}</option>)}</select></div>
           <div><label style={{ marginTop: 0 }}>Tahun</label>
-            <select value={tahun} onChange={(e) => setTahun(+e.target.value)}>{[0, 1, 2, 3].map((x) => <option key={x}>{kini.getFullYear() - x}</option>)}</select></div>
+            <select value={tahun} onChange={(e) => { setTahun(+e.target.value); setPage(1); }}>{[0, 1, 2, 3].map((x) => <option key={x}>{kini.getFullYear() - x}</option>)}</select></div>
         </div>
+        <label>Cari tanggal, jam, atau shift</label><input value={cari} onChange={(e) => { setCari(e.target.value); setPage(1); }} placeholder="Ketik tanggal / jam / shift" />
       </div>
       {!list ? <div className="card"><div className="skel" style={{ height: 80 }} /></div>
-        : !list.length ? <div className="card"><div className="empty">Belum ada data absensi bulan ini.</div></div> : (<>
+        : !rows.length ? <div className="card"><div className="empty">Belum ada data absensi bulan ini.</div></div> : (<>
           <div className="card"><div className="statgrid" style={{ marginTop: 0 }}>
-            <div className="stat"><div className="k">Total Hadir</div><div className="v">{list.length}</div></div>
-            <div className="stat"><div className="k">Terlambat</div><div className="v">{list.filter((a) => a.terlambat).length}</div></div>
+            <div className="stat"><div className="k">Total Hadir</div><div className="v">{list.total}</div></div>
+            <div className="stat"><div className="k">Terlambat (halaman ini)</div><div className="v">{rows.filter((a) => a.terlambat).length}</div></div>
           </div></div>
-          {list.map((a) => (
+          {rows.map((a) => (
             <div key={a.id} className="item">
               <div className="top">
                 <div><div className="nm">{tglIndo(a.tanggal)}</div><div className="dt">{a.inTime || '--:--'} → {a.outTime || '--:--'}{a.durasi && ' · ' + a.durasi}</div></div>
@@ -59,6 +63,7 @@ export default function Riwayat() {
               </div>
             </div>
           ))}
+          <NavigasiHalaman page={list.page} total={list.total} totalPages={list.totalPages} ubah={setPage} />
         </>)}
     </div>
   );

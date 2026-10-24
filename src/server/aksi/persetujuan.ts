@@ -1,6 +1,6 @@
 /* Keputusan HC: cuti, pengajuan jadwal & lembur, izin/sakit/WFH/dinas, tukar jadwal.
    Tidak ada yang bisa memutus pengajuannya sendiri. */
-import { exec, q, q1, transaksi } from '@/lib/db';
+import { exec, nilai, q, q1, transaksi } from '@/lib/db';
 import { b, gagal, i, s } from '@/lib/http';
 import {
   cutiAktif, labelKet, logAksi, namaJadwal, need, nilaiJadwal, perluRekomendasi, sisaCuti, sudahAdaAbsensi,
@@ -9,6 +9,8 @@ import {
 import { cutiRow, ketRow, pengajuanRow, tukarRow } from '@/lib/format';
 import { POLA_TGL, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
+import { simpanBuktiPengajuan, validasiLinkBukti } from './bukti';
+import { hasilHalaman, paramHalaman, polaCari } from '@/lib/paginasi';
 
 const filterStatus = (status: string, kolom: string) => (status !== 'ALL' ? ` WHERE ${kolom}=?` : '');
 
@@ -17,14 +19,18 @@ export const aksiPersetujuan: KumpulanAksi = {
   async adm_cuti(m) {
     await need(['admin']);
     const status = s(m, 'status', 'Menunggu');
-    const rows = await q(`SELECT c.*, u.nik,u.nama,u.dept,u.role FROM cuti c JOIN users u ON u.id=c.user_id${filterStatus(status, 'c.status')}
-      ORDER BY c.created_at DESC`, status !== 'ALL' ? [status] : []);
+    const h = paramHalaman(m), cond: string[] = [], p: unknown[] = [];
+    if (status !== 'ALL') { cond.push('c.status=?'); p.push(status); }
+    if (h.cari) { cond.push('(u.nama LIKE ? OR u.nik LIKE ? OR u.dept LIKE ? OR c.jenis LIKE ? OR c.alasan LIKE ?)'); p.push(...Array(5).fill(polaCari(h.cari))); }
+    const where = cond.length ? ' WHERE ' + cond.join(' AND ') : '', from = ' FROM cuti c JOIN users u ON u.id=c.user_id' + where;
+    const total = Number(await nilai('SELECT COUNT(*)' + from, p));
+    const rows = await q(`SELECT c.*, u.nik,u.nama,u.dept,u.role${from} ORDER BY c.created_at DESC` + (m.all ? '' : ' LIMIT ? OFFSET ?'), m.all ? p : [...p, h.limit, h.offset]);
     const hasil = [];
     for (const r of rows) {
       const p = await q1('SELECT * FROM users WHERE id=?', [r.user_id]);
       hasil.push({ ...cutiRow(r), sisaPemohon: p && cutiAktif(p) ? await sisaCuti(p) : null });
     }
-    return hasil;
+    return m.all ? hasil : hasilHalaman(hasil, total, h.page);
   },
   async adm_cuti_putus(m) {
     const u = await need(['admin']);
@@ -50,10 +56,14 @@ export const aksiPersetujuan: KumpulanAksi = {
   async adm_pengajuan(m) {
     await need(['admin']);
     const status = s(m, 'status', 'Menunggu HR');
-    const l = await q(`SELECT p.*, u.nama, u.nik, c.nama cabang_nama FROM pengajuan p
-      JOIN users u ON u.id=p.user_id LEFT JOIN cabang c ON c.id=u.cabang_id${filterStatus(status, 'p.status')}
-      ORDER BY p.id DESC LIMIT 200`, status !== 'ALL' ? [status] : []);
-    return Promise.all(l.map(pengajuanRow));
+    const h = paramHalaman(m), cond: string[] = [], p: unknown[] = [];
+    if (status !== 'ALL') { cond.push('p.status=?'); p.push(status); }
+    if (h.cari) { cond.push('(u.nama LIKE ? OR u.nik LIKE ? OR p.jenis LIKE ? OR p.alasan LIKE ?)'); p.push(...Array(4).fill(polaCari(h.cari))); }
+    const where = cond.length ? ' WHERE ' + cond.join(' AND ') : '', from = ' FROM pengajuan p JOIN users u ON u.id=p.user_id LEFT JOIN cabang c ON c.id=u.cabang_id' + where;
+    const total = Number(await nilai('SELECT COUNT(*)' + from, p));
+    const l = await q(`SELECT p.*, u.nama, u.nik, c.nama cabang_nama${from} ORDER BY p.id DESC` + (m.all ? '' : ' LIMIT ? OFFSET ?'), m.all ? p : [...p, h.limit, h.offset]);
+    const items = await Promise.all(l.map(pengajuanRow));
+    return m.all ? items : hasilHalaman(items, total, h.page);
   },
   async adm_pengajuan_putus(m) {
     const u = await need(['admin']);
@@ -89,10 +99,14 @@ export const aksiPersetujuan: KumpulanAksi = {
   async adm_ketidakhadiran(m) {
     await need(['admin']);
     const status = s(m, 'status', 'Menunggu HR');
-    const l = await q(`SELECT k.*, u.nama, u.nik, c.nama cabang_nama FROM ketidakhadiran k
-      JOIN users u ON u.id=k.user_id LEFT JOIN cabang c ON c.id=u.cabang_id${filterStatus(status, 'k.status')}
-      ORDER BY k.id DESC LIMIT 200`, status !== 'ALL' ? [status] : []);
-    return l.map(ketRow);
+    const h = paramHalaman(m), cond: string[] = [], p: unknown[] = [];
+    if (status !== 'ALL') { cond.push('k.status=?'); p.push(status); }
+    if (h.cari) { cond.push('(u.nama LIKE ? OR u.nik LIKE ? OR k.jenis LIKE ? OR k.alasan LIKE ?)'); p.push(...Array(4).fill(polaCari(h.cari))); }
+    const where = cond.length ? ' WHERE ' + cond.join(' AND ') : '', from = ' FROM ketidakhadiran k JOIN users u ON u.id=k.user_id LEFT JOIN cabang c ON c.id=u.cabang_id' + where;
+    const total = Number(await nilai('SELECT COUNT(*)' + from, p));
+    const l = await q(`SELECT k.*, u.nama, u.nik, c.nama cabang_nama${from} ORDER BY k.id DESC` + (m.all ? '' : ' LIMIT ? OFFSET ?'), m.all ? p : [...p, h.limit, h.offset]);
+    const items = l.map(ketRow);
+    return m.all ? items : hasilHalaman(items, total, h.page);
   },
   async adm_ket_putus(m) {
     const u = await need(['admin']);
@@ -111,6 +125,7 @@ export const aksiPersetujuan: KumpulanAksi = {
   /* ---------- tukar jadwal ---------- */
   async tukar_ajukan(m) {
     const u = await need();
+    validasiLinkBukti(m);
     if (u.jam_mode !== 'shift') gagal('Tukar jadwal hanya untuk karyawan bermode Shift');
     const rid = i(m, 'rekanId'), t1 = s(m, 'tglSaya'), t2 = s(m, 'tglRekan'), alasan = s(m, 'alasan');
     if (!POLA_TGL.test(t1) || !POLA_TGL.test(t2)) gagal('Tanggal tidak sah');
@@ -127,9 +142,11 @@ export const aksiPersetujuan: KumpulanAksi = {
       AND ((pemohon_id=? AND tgl_pemohon=?) OR (rekan_id=? AND tgl_rekan=?))`, [u.id, t1, u.id, t1]);
     if (ada) gagal('Sudah ada permintaan tukar yang masih berjalan untuk tanggal itu');
     const n1 = await nilaiJadwal(u, t1), n2 = await nilaiJadwal(r, t2);
-    await exec(`INSERT INTO tukar_jadwal (jenis,pemohon_id,tgl_pemohon,rekan_id,tgl_rekan,alasan,status,shift_pemohon_sebelum,shift_rekan_sebelum)
+    const ins = await exec(`INSERT INTO tukar_jadwal (jenis,pemohon_id,tgl_pemohon,rekan_id,tgl_rekan,alasan,status,shift_pemohon_sebelum,shift_rekan_sebelum)
       VALUES (?,?,?,?,?,?,?,?,?)`, [n1 === null || n2 === null ? 'libur' : 'shift', u.id, t1, rid, t2, alasan, 'Menunggu Rekan',
       await namaJadwal(n1), await namaJadwal(n2)]);
+    const buktiLink = await simpanBuktiPengajuan(m, u, 'tukar_jadwal', ins.insertId);
+    if (buktiLink) await exec('UPDATE tukar_jadwal SET bukti_link=? WHERE id=?', [buktiLink, ins.insertId]);
     await logAksi(u.id, 'ajukan_tukar', `${t1} ↔ ${r.nama} ${t2}`);
     return { pesan: `Permintaan terkirim. Menunggu persetujuan ${r.nama}, lalu HC.` };
   },
@@ -159,10 +176,14 @@ export const aksiPersetujuan: KumpulanAksi = {
   async adm_tukar(m) {
     await need(['admin']);
     const status = s(m, 'status', 'Menunggu HR');
-    const l = await q(`SELECT t.*, p.nama pemohon_nama, r.nama rekan_nama, c.nama cabang_nama FROM tukar_jadwal t
-      JOIN users p ON p.id=t.pemohon_id JOIN users r ON r.id=t.rekan_id LEFT JOIN cabang c ON c.id=p.cabang_id${filterStatus(status, 't.status')}
-      ORDER BY t.id DESC LIMIT 200`, status !== 'ALL' ? [status] : []);
-    return l.map(tukarRow);
+    const h = paramHalaman(m), cond: string[] = [], p: unknown[] = [];
+    if (status !== 'ALL') { cond.push('t.status=?'); p.push(status); }
+    if (h.cari) { cond.push('(p.nama LIKE ? OR p.nik LIKE ? OR r.nama LIKE ? OR r.nik LIKE ? OR t.alasan LIKE ?)'); p.push(...Array(5).fill(polaCari(h.cari))); }
+    const where = cond.length ? ' WHERE ' + cond.join(' AND ') : '', from = ' FROM tukar_jadwal t JOIN users p ON p.id=t.pemohon_id JOIN users r ON r.id=t.rekan_id LEFT JOIN cabang c ON c.id=p.cabang_id' + where;
+    const total = Number(await nilai('SELECT COUNT(*)' + from, p));
+    const l = await q(`SELECT t.*, p.nama pemohon_nama, r.nama rekan_nama, c.nama cabang_nama${from} ORDER BY t.id DESC` + (m.all ? '' : ' LIMIT ? OFFSET ?'), m.all ? p : [...p, h.limit, h.offset]);
+    const items = l.map(tukarRow);
+    return m.all ? items : hasilHalaman(items, total, h.page);
   },
   async adm_tukar_putus(m) {
     const u = await need(['admin']);

@@ -5,6 +5,7 @@ import {
 } from './aturan';
 import { gagal, type Masukan } from './http';
 import { POLA_TGL } from './waktu';
+import { normalisasiNomorWhatsApp } from './telepon';
 
 const jam5 = (t: string | null) => (t ? String(t).slice(0, 5) : '');
 
@@ -34,6 +35,7 @@ export async function userPublik(u: User) {
     daruratHubungan: u.darurat_hubungan ?? '', daruratHp: u.darurat_hp ?? '',
     foto: u.foto_profil ? '/uploads/avatar/' + u.foto_profil : '',
     tema: u.tema ?? '', modeTampilan: u.mode_tampilan ?? 'auto',
+    impersonasi: u.impersonasi ?? null,
   };
 }
 export type UserPublik = Awaited<ReturnType<typeof userPublik>>;
@@ -59,7 +61,7 @@ export function absRow(a: Baris) {
 export function cutiRow(c: Baris) {
   return {
     id: c.id, userId: c.user_id, nik: c.nik ?? '', nama: c.nama ?? '', dept: c.dept ?? '', role: c.role ?? 'karyawan',
-    jenis: c.jenis, mulai: c.mulai, selesai: c.selesai, hari: c.hari, alasan: c.alasan, status: c.status,
+    jenis: c.jenis, mulai: c.mulai, selesai: c.selesai, hari: c.hari, alasan: c.alasan, buktiLink: c.bukti_link ?? '', status: c.status,
     approver: c.approver, catatan: c.catatan, tglAjukan: c.created_at,
   };
 }
@@ -69,7 +71,7 @@ export async function pengajuanRow(x: Baris) {
     id: x.id, userId: x.user_id, nama: x.nama ?? '', nik: x.nik ?? '', cabang: x.cabang_nama ?? '',
     jenis: x.jenis, jenisLabel: labelJenis(x.jenis), tanggal: x.tanggal, tanggal2: x.tanggal2,
     shiftId: x.shift_id, shiftNama: sh?.nama ?? '', jamMulai: jam5(x.jam_mulai), jamSelesai: jam5(x.jam_selesai),
-    menit: x.menit, alasan: x.alasan, status: x.status, rekomendasi: x.rekomendasi, perekomendasi: x.perekomendasi,
+    menit: x.menit, alasan: x.alasan, buktiLink: x.bukti_link ?? '', status: x.status, rekomendasi: x.rekomendasi, perekomendasi: x.perekomendasi,
     catatanRekomendasi: x.catatan_rekomendasi, approver: x.approver, catatanHr: x.catatan_hr,
     jadwalSebelum: x.jadwal_sebelum, jadwalSesudah: x.jadwal_sesudah, tglAjukan: x.created_at, tglPutusan: x.tgl_putusan,
   };
@@ -77,7 +79,7 @@ export async function pengajuanRow(x: Baris) {
 export function ketRow(x: Baris) {
   return {
     id: x.id, userId: x.user_id, nama: x.nama ?? '', nik: x.nik ?? '', cabang: x.cabang_nama ?? '',
-    jenis: x.jenis, jenisLabel: labelKet(x.jenis), tanggal: x.tanggal, sesi: x.sesi ?? '', alasan: x.alasan, status: x.status,
+    jenis: x.jenis, jenisLabel: labelKet(x.jenis), tanggal: x.tanggal, sesi: x.sesi ?? '', alasan: x.alasan, buktiLink: x.bukti_link ?? '', status: x.status,
     rekomendasi: x.rekomendasi, perekomendasi: x.perekomendasi, catatanRekomendasi: x.catatan_rekomendasi,
     approver: x.approver, catatanHr: x.catatan_hr, tglAjukan: x.created_at, tglPutusan: x.tgl_putusan,
   };
@@ -85,7 +87,7 @@ export function ketRow(x: Baris) {
 export function tukarRow(t: Baris) {
   return {
     id: t.id, jenis: t.jenis, pemohonId: t.pemohon_id, pemohon: t.pemohon_nama ?? '', tglPemohon: t.tgl_pemohon,
-    rekanId: t.rekan_id, rekan: t.rekan_nama ?? '', tglRekan: t.tgl_rekan, alasan: t.alasan, status: t.status,
+    rekanId: t.rekan_id, rekan: t.rekan_nama ?? '', tglRekan: t.tgl_rekan, alasan: t.alasan, buktiLink: t.bukti_link ?? '', status: t.status,
     catatanRekan: t.catatan_rekan, catatanHr: t.catatan_hr, approver: t.approver,
     shiftPemohonSebelum: t.shift_pemohon_sebelum, shiftRekanSebelum: t.shift_rekan_sebelum,
     shiftPemohonSesudah: t.shift_pemohon_sesudah, shiftRekanSesudah: t.shift_rekan_sesudah,
@@ -109,6 +111,10 @@ export const KOLOM_BIODATA: Record<string, [string, string | number]> = {
 /* Periksa satu nilai biodata; mengembalikan [nilai, pesan kesalahan] */
 export function periksaBiodata(k: string, v: string): [string | null, string] {
   const [, aturan] = KOLOM_BIODATA[k];
+  if (k === 'noHp' && v !== '') {
+    const no = normalisasiNomorWhatsApp(v);
+    return no ? [no, ''] : [null, 'Format nomor WhatsApp tidak sah. Gunakan nomor aktif, mis. 081234567890 atau +6281234567890.'];
+  }
   if (aturan === 'date') {
     if (v === '') return [null, ''];
     return POLA_TGL.test(v) ? [v, ''] : [null, 'Format tanggal tidak sah: ' + k];

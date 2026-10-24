@@ -5,6 +5,7 @@ import { api } from '@/lib/klien/api';
 import { pad, todayStr } from '@/lib/klien/format';
 import { useAplikasi } from './Aplikasi';
 import { Ikon } from './Ikon';
+import { dataBukti, InputBuktiPengajuan } from './BuktiPengajuan';
 
 type Selesai = () => void;
 
@@ -17,12 +18,13 @@ export function FormIzin({ jenis, selesai }: { jenis: 'izin' | 'setengah_hari' |
   const [sampai, setSampai] = useState(todayStr());
   const [sesi, setSesi] = useState<'pagi' | 'siang'>('pagi');
   const [alasan, setAlasan] = useState('');
+  const [buktiLink, setBuktiLink] = useState(''), [buktiFile, setBuktiFile] = useState<File | null>(null);
   const [kirim, setKirim] = useState(false);
   const setengah = jenis === 'setengah_hari';
   const ajukan = async () => {
     setKirim(true);
     try {
-      const d: Record<string, string> = { jenis: jenis === 'izin' ? jenisIzin : jenis, tanggal: mulai, alasan: alasan.trim() };
+      const d: Record<string, any> = { jenis: jenis === 'izin' ? jenisIzin : jenis, tanggal: mulai, alasan: alasan.trim(), buktiLink: buktiLink.trim(), buktiFile: await dataBukti(buktiFile) };
       if (setengah) d.sesi = sesi; else d.sampai = sampai;
       const r = await api<{ pesan: string }>('ketidakhadiran_ajukan', d);
       tutupSheet(); toast(r.pesan); selesai();
@@ -62,6 +64,7 @@ export function FormIzin({ jenis, selesai }: { jenis: 'izin' | 'setengah_hari' |
       <label>{jenis === 'dlk' ? 'Kota tujuan & keperluan' : 'Keterangan'}</label>
       <textarea value={alasan} onChange={(e) => setAlasan(e.target.value)}
         placeholder={jenis === 'dlk' ? 'mis. Medan — persiapan OSN tingkat provinsi' : jenis === 'wfh' ? 'mis. menyelesaikan laporan' : 'mis. demam, kontrol ke dokter'} />
+      <InputBuktiPengajuan link={buktiLink} setLink={setBuktiLink} file={buktiFile} setFile={setBuktiFile} />
       <button className="btn" disabled={kirim} onClick={ajukan}><Ikon n="send" />Kirim ke HC</button>
       <button className="btn ghost" onClick={tutupSheet}>Batal</button>
     </>
@@ -77,6 +80,7 @@ export function FormCuti({ selesai }: { selesai: Selesai }) {
   const [mulai, setMulai] = useState(todayStr());
   const [akhir, setAkhir] = useState(todayStr());
   const [alasan, setAlasan] = useState('');
+  const [buktiLink, setBuktiLink] = useState(''), [buktiFile, setBuktiFile] = useState<File | null>(null);
   const [libur, setLibur] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(0);
   const [kirim, setKirim] = useState(false);
@@ -104,7 +108,7 @@ export function FormCuti({ selesai }: { selesai: Selesai }) {
   const ajukan = async () => {
     setKirim(true);
     try {
-      const r = await api<{ pesan: string }>('cuti_ajukan', { jenis, mulai, selesai: akhir, alasan: alasan.trim() });
+      const r = await api<{ pesan: string }>('cuti_ajukan', { jenis, mulai, selesai: akhir, alasan: alasan.trim(), buktiLink: buktiLink.trim(), buktiFile: await dataBukti(buktiFile) });
       tutupSheet(); toast(r.pesan); selesai();
     } catch (e) { galat(e); setKirim(false); }
   };
@@ -125,6 +129,7 @@ export function FormCuti({ selesai }: { selesai: Selesai }) {
       </div>
       <label>Alasan / keterangan</label>
       <textarea value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="Contoh: keperluan keluarga" />
+      <InputBuktiPengajuan link={buktiLink} setLink={setBuktiLink} file={buktiFile} setFile={setBuktiFile} />
       <div className="row">
         <button className="btn ghost sm" onClick={tutupSheet}>Batal</button>
         <button className="btn sm" disabled={kirim} onClick={ajukan}>Kirim Pengajuan</button>
@@ -140,11 +145,12 @@ export function FormLembur({ selesai }: { selesai: Selesai }) {
   const [a, setA] = useState('17:00');
   const [b, setB] = useState('20:00');
   const [alasan, setAlasan] = useState('');
+  const [buktiLink, setBuktiLink] = useState(''), [buktiFile, setBuktiFile] = useState<File | null>(null);
   const [kirim, setKirim] = useState(false);
   const ajukan = async () => {
     setKirim(true);
     try {
-      const r = await api<{ pesan: string }>('pengajuan_ajukan', { jenis: 'lembur', tanggal: tgl, jamMulai: a, jamSelesai: b, alasan: alasan.trim() });
+      const r = await api<{ pesan: string }>('pengajuan_ajukan', { jenis: 'lembur', tanggal: tgl, jamMulai: a, jamSelesai: b, alasan: alasan.trim(), buktiLink: buktiLink.trim(), buktiFile: await dataBukti(buktiFile) });
       tutupSheet(); toast(r.pesan); selesai();
     } catch (e) { galat(e); setKirim(false); }
   };
@@ -158,6 +164,7 @@ export function FormLembur({ selesai }: { selesai: Selesai }) {
       </div>
       <label>Alasan</label>
       <textarea value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="mis. input nilai OSN" />
+      <InputBuktiPengajuan link={buktiLink} setLink={setBuktiLink} file={buktiFile} setFile={setBuktiFile} />
       <button className="btn" disabled={kirim} onClick={ajukan}><Ikon n="send" />Kirim ke HC</button>
       <button className="btn ghost" onClick={tutupSheet}>Batal</button>
     </>

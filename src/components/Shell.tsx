@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { api, pantauSibuk } from '@/lib/klien/api';
 import { labelRole } from '@/lib/klien/format';
 import { NAV, navTerlihat, urutanBawah, type ItemNav } from '@/lib/klien/nav';
-import { isAdminUp, useAplikasi } from './Aplikasi';
+import { isAdminUp, useAplikasi, type Me } from './Aplikasi';
 import { Avatar } from './Avatar';
 import { Ikon } from './Ikon';
 
@@ -15,7 +15,7 @@ function aktifUntuk(path: string): ItemNav | undefined {
 }
 
 export function Shell({ children }: { children: ReactNode }) {
-  const { me, settings, inbox, yakin, setMe } = useAplikasi();
+  const { me, settings, inbox, yakin, setMe, galat } = useAplikasi();
   const path = usePathname();
   const router = useRouter();
   const [laci, setLaci] = useState(false);
@@ -75,6 +75,13 @@ export function Shell({ children }: { children: ReactNode }) {
     await api('logout', {}, true).catch(() => {});
     setMe(null); router.replace('/masuk');
   };
+  const kembaliSuperAdmin = async () => {
+    try {
+      const r = await api<{ me: Me }>('impersonasi_kembali', {}, true);
+      setMe(r.me);
+      router.replace('/karyawan');
+    } catch (e) { galat(e); }
+  };
   const bawah = urutanBawah(me);
   const logo = settings.logo || '/logo-posi.png';
   let grup = '';
@@ -126,6 +133,9 @@ export function Shell({ children }: { children: ReactNode }) {
           )}
           <Link href="/profil" className="tb-av" title="Profil"><Avatar u={me} ukuran={38} /></Link>
         </header>
+        {me.impersonasi && <div className="impersonasi-banner"><div>
+          <b>Anda sedang masuk sebagai {me.nama}</b><span> · Aksi di aplikasi memakai akun karyawan ini.</span>
+        </div><button className="btn sm ghost auto" onClick={kembaliSuperAdmin}>Kembali ke Super Admin</button></div>}
         <main id="content">
           <div key={path} className={'page ' + arah}>{children}</div>
         </main>

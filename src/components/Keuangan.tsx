@@ -5,6 +5,7 @@ import { isAdminUp, useAplikasi } from './Aplikasi';
 import { Avatar } from './Avatar';
 import { ChipBerkas } from './Dokumen';
 import { Ikon } from './Ikon';
+import { dataBukti, InputBuktiPengajuan, TautanBukti } from './BuktiPengajuan';
 import { api } from '@/lib/klien/api';
 import { bacaBerkas } from '@/lib/klien/berkas';
 import { angka, periodeTeks, rupiah, teksStatus, tglPendek, todayStr } from '@/lib/klien/format';
@@ -36,15 +37,15 @@ export function FormReimburse({ selesai }: { selesai: () => void }) {
   const kat: string[] = settings.reimburseKategori?.length ? settings.reimburseKategori : ['Lainnya'];
   const [k, setK] = useState(kat[0]), [tgl, setTgl] = useState(todayStr()), [keg, setKeg] = useState(''), [nom, setNom] = useState(0), [ket, setKet] = useState('');
   const [files, setFiles] = useState<File[]>([]), [kirim, setKirim] = useState(false);
+  const [buktiLink, setBuktiLink] = useState('');
   const simpan = async () => {
-    if (!files.length) { toast('Lampirkan foto nota / bukti pembayaran', true); return; }
     if (files.length > 5) { toast('Maksimal 5 lampiran', true); return; }
     if (!nom) { toast('Isi nominal', true); return; }
     setKirim(true);
     try {
       const bukti = await Promise.all(files.map((f) => bacaBerkas(f, 1600)));
       const r = await api<{ pesan: string }>('rb_ajukan', { kategori: k, tanggal: tgl, kegiatan: keg.trim(), nominal: nom, keterangan: ket.trim(),
-        bukti: bukti.map((b) => ({ nama: b.nama, data: b.data })) });
+        buktiLink: buktiLink.trim(), bukti: bukti.map((b) => ({ nama: b.nama, data: b.data })) });
       tutupSheet(); toast(r.pesan); selesai();
     } catch (e) { galat(e); setKirim(false); }
   };
@@ -57,11 +58,13 @@ export function FormReimburse({ selesai }: { selesai: () => void }) {
     <label>Kegiatan / acara <span className="tiny">(opsional, mis. OSN Regional Medan)</span></label><input value={keg} onChange={(e) => setKeg(e.target.value)} placeholder="Nama kegiatan" />
     <label>Nominal (Rp)</label><InputUang nilai={nom} ubah={setNom} />
     <label>Keterangan</label><textarea value={ket} onChange={(e) => setKet(e.target.value)} placeholder="mis. tiket kereta Jakarta–Bandung untuk survei venue" />
-    <label>Foto nota / bukti bayar <span className="tiny">(1–5 berkas, foto atau PDF)</span></label>
+    <label>Foto nota / bukti bayar <span className="tiny">(opsional, 1–5 berkas)</span></label>
     <input type="file" accept="image/*,application/pdf" multiple onChange={(e) => setFiles(Array.from(e.target.files ?? []).slice(0, 5))} />
     {files.length > 0 && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>{files.map((f, n) => /^image\//.test(f.type)
       ? <img key={n} src={URL.createObjectURL(f)} alt="" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 10, border: '1px solid var(--line)' }} />
       : <span key={n} className="badge b-blue"><Ikon n="file-text" />{f.name}</span>)}</div>}
+    <label>Tautan nota / bukti <span className="tiny">(Drive/Sheet, bila tidak mengunggah file)</span></label>
+    <input type="url" value={buktiLink} onChange={(e) => setBuktiLink(e.target.value)} placeholder="https://drive.google.com/..." />
     <div className="note" style={{ marginTop: 12 }}>Klaim paling lambat {settings.reimburseMaksHari || 60} hari setelah tanggal transaksi. Foto dikompres otomatis agar hemat kuota.</div>
     <button className="btn" disabled={kirim} onClick={simpan}>{kirim ? <><span className="spin" /> Mengunggah…</> : <><Ikon n="send" />Kirim Klaim</>}</button>
     <button className="btn ghost" onClick={tutupSheet}>Batal</button>
@@ -141,6 +144,7 @@ export function ItemReimburse({ r, admin, segarkan }: { r: Data; admin?: boolean
       {st === 'Disetujui' && <div className="kv"><span>Pembayaran</span><span>{r.metodeBayar === 'gaji' ? 'bersama gaji ' + periodeTeks(r.periodeGaji) : 'transfer — menunggu diproses HC'}</span></div>}
       {st === 'Dibayar' && <div className="kv"><span>Dibayar</span><span>{tglPendek(r.tglBayar)}{r.metodeBayar === 'gaji' ? ' (slip gaji)' : ' (transfer)'}</span></div>}
       <div><ChipBerkas list={r.bukti} /></div>
+      <TautanBukti link={r.buktiLink} />
       {aksi && <div className="row" style={{ marginTop: 10, flexWrap: 'wrap', justifyContent: 'flex-start' }}>{aksi}</div>}
       {!admin && /Menunggu/.test(st) && <button className="btn ghost sm auto" style={{ marginTop: 10 }} onClick={batal}><Ikon n="x" />Batalkan</button>}
     </div>
@@ -152,10 +156,13 @@ export function FormKasbon({ selesai }: { selesai: () => void }) {
   const { settings, tutupSheet, toast, galat } = useAplikasi();
   const maks = settings.kasbonTenorMaks || 12;
   const [nom, setNom] = useState(0), [tenor, setTenor] = useState(Math.min(3, maks)), [alasan, setAlasan] = useState(''), [kirim, setKirim] = useState(false);
-  const simpan = () => {
+  const [buktiLink, setBuktiLink] = useState(''), [buktiFile, setBuktiFile] = useState<File | null>(null);
+  const simpan = async () => {
     setKirim(true);
-    api<{ pesan: string }>('ks_ajukan', { nominal: nom, tenor, alasan: alasan.trim() }).then((r) => { tutupSheet(); toast(r.pesan); selesai(); })
-      .catch((e) => { galat(e); setKirim(false); });
+    try {
+      const r = await api<{ pesan: string }>('ks_ajukan', { nominal: nom, tenor, alasan: alasan.trim(), buktiLink: buktiLink.trim(), buktiFile: await dataBukti(buktiFile) });
+      tutupSheet(); toast(r.pesan); selesai();
+    } catch (e) { galat(e); setKirim(false); }
   };
   return (<>
     <h3><Ikon n="wallet" />Ajukan Kasbon</h3>
@@ -165,6 +172,7 @@ export function FormKasbon({ selesai }: { selesai: () => void }) {
     <div className="note" style={{ marginTop: 12 }}>{nom ? <>Cicilan <b>{rupiah(Math.ceil(nom / tenor))}</b>/bulan selama {tenor} bulan, dipotong otomatis dari gaji setelah dicairkan HC.</>
       : 'Isi nominal untuk melihat simulasi cicilan.'}</div>
     <label>Alasan</label><textarea value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="mis. biaya pendidikan anak" />
+    <InputBuktiPengajuan link={buktiLink} setLink={setBuktiLink} file={buktiFile} setFile={setBuktiFile} />
     <button className="btn" disabled={kirim} onClick={simpan}><Ikon n="send" />Ajukan</button>
     <button className="btn ghost" onClick={tutupSheet}>Batal</button>
   </>);
@@ -251,6 +259,7 @@ export function ItemKasbon({ k, admin, segarkan }: { k: Data; admin?: boolean; s
         <div className="kv"><span>Dicairkan</span><span>{tglPendek(k.tglCair)} · potong mulai {periodeTeks(k.mulaiPotong)}</span></div></>}
       {k.hrCatatan && <div className="kv"><span>Catatan verifikasi</span><span>{k.hrCatatan}</span></div>}
       {k.finCatatan && <div className="kv"><span>Catatan pencairan</span><span>{k.finCatatan}</span></div>}
+      <TautanBukti link={k.buktiLink} />
       {k.pembayaran?.length > 0 && <details style={{ marginTop: 6 }}><summary className="tiny" style={{ cursor: 'pointer', color: 'var(--primary)' }}>Riwayat cicilan ({k.pembayaran.length})</summary>
         {k.pembayaran.map((b: Data, n: number) => <div key={n} className="kv"><span>{periodeTeks(b.periode)} · {b.sumber === 'gaji' ? 'potong gaji' : 'bayar manual'}</span><span>{rupiah(b.nominal)}</span></div>)}</details>}
       {aksi && <div className="row" style={{ marginTop: 10, flexWrap: 'wrap', justifyContent: 'flex-start' }}>{aksi}</div>}

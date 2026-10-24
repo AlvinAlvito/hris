@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 
 export interface DataSesi {
   uid?: number;
+  superadminUid?: number;
 }
 
 export const opsiSesi: SessionOptions = {

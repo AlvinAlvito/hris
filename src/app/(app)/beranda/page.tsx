@@ -74,6 +74,13 @@ export default function Beranda() {
           <div className="hchip"><div className="k">Durasi</div><div className="v">{a?.durasi || (a?.inTime ? '…' : '—')}</div></div>
         </div>
         <div id="stInfo">
+          {d?.sesiTerbukaLama && (
+            <div className="warn">
+              <b>Absensi tanggal {tglPendek(d.sesiTerbukaLama.tanggal)} belum clock out</b>
+              <div className="tiny" style={{ marginTop: 3 }}>Sesi ini tidak termasuk absensi hari ini.</div>
+              <button className="btn sm" style={{ marginTop: 8 }} onClick={() => absen('out')}><Ikon n="log-out" />Selesaikan clock out</button>
+            </div>
+          )}
           {d?.lupaOut?.length > 0 && (
             <div className="warn"><b>Ada {d!.lupaOut.length} absensi yang belum di-clock out</b><br />
               {d!.lupaOut.map((x: Data) => `${tglPendek(x.tanggal)} (masuk ${x.inTime})`).join(', ')}

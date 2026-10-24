@@ -20,9 +20,15 @@ export function isAtasanRole(u: User): boolean { return u.role === 'atasan'; }
 export function isAtasan(u: User): boolean { return isAtasanRole(u) || isAdminUp(u); }
 
 export async function me(): Promise<User | null> {
-  const ss = await sesi();
-  if (!ss.uid) return null;
-  return simpanSementara('me', () => q1('SELECT * FROM users WHERE id=? AND aktif=1', [ss.uid]));
+  return simpanSementara('me', async () => {
+    const ss = await sesi();
+    if (!ss.uid) return null;
+    const u = await q1('SELECT * FROM users WHERE id=? AND aktif=1', [ss.uid]);
+    if (!u || !ss.superadminUid) return u;
+    const admin = await q1("SELECT id,nama FROM users WHERE id=? AND role='direktur' AND aktif=1", [ss.superadminUid]);
+    if (!admin) { ss.destroy(); return null; }
+    return { ...u, impersonasi: { id: admin.id, nama: admin.nama } };
+  });
 }
 export async function need(peran?: string[]): Promise<User> {
   const u = await me();
