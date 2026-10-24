@@ -1,0 +1,9 @@
+node_modules/
+.next/
+.env.local
+storage/uploads/*
+storage/private/*
+storage/brand/*
+!storage/**/.gitkeep
+*.tsbuildinfo
+next-env.d.ts
