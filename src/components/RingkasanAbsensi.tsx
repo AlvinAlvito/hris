@@ -55,7 +55,7 @@ export function RingkasanAbsensi({ tanggal, cabangId, filter, setFilter, segar }
           <div className="ra-judul"><h3><Ikon n="chart-pie" />Ringkasan Absensi</h3><span className="muted small">{tglIndo(d.tanggal)}</span></div>
           <div style={{ fontSize: 15, marginTop: 6 }}><b>{d.hadir}</b> dari <b>{d.wajib}</b> karyawan wajib hadir sudah masuk
             {d.totalKaryawan > d.wajib && <span className="muted"> · {d.totalKaryawan - d.wajib} libur</span>}</div>
-          <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+          <div className="row ra-lencana" style={{ gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
             <span className="badge b-gray"><Ikon n="clock" />{d.jamKerja ? `Jam kerja ${d.jamKerja[0]}–${d.jamKerja[1]}` : 'Hari libur mingguan'}</span>
             {d.rataMasuk && <span className="badge b-blue"><Ikon n="log-in" />Rata-rata masuk {d.rataMasuk}</span>}
             {r.luarArea > 0 && <span className="badge b-amber"><Ikon n="map-pin" />{r.luarArea} absen di luar area</span>}
@@ -91,7 +91,7 @@ export function RingkasanAbsensi({ tanggal, cabangId, filter, setFilter, segar }
       </div>
       <div className="card"><h3><Ikon n="building-2" />Kehadiran per Divisi</h3>
         {d.perDivisi.length ? (<>
-          <div className="ra-div">
+          <div className="ra-div ra-gulir">
             {d.perDivisi.map((x: Data) => {
               const tepat = x.hadir - x.telat, p = (n: number) => `${(n / Math.max(1, x.total)) * 100}%`;
               return (<div key={x.nama}>
@@ -110,7 +110,7 @@ export function RingkasanAbsensi({ tanggal, cabangId, filter, setFilter, segar }
 
     <div className="ra-grid">
       <div className="card"><h3><Ikon n="alarm-clock" />Terlambat Hari Ini <span className="m">({d.terlambat.length})</span></h3>
-        {d.terlambat.length ? <div className="ra-telat">{d.terlambat.map((x: Data) => (
+        {d.terlambat.length ? <div className="ra-telat ra-gulir">{d.terlambat.map((x: Data) => (
           <div key={x.id} className="baris">
             <div style={{ minWidth: 0 }}><b>{x.nama}</b><div className="tiny muted">{x.dept || '-'} · masuk {x.inTime}{x.jadwalIn && ` (jadwal ${x.jadwalIn})`}</div></div>
             <div className="gar"><i style={{ width: `${(x.menitTelat / maksTelat) * 100}%` }} /></div>
@@ -118,7 +118,7 @@ export function RingkasanAbsensi({ tanggal, cabangId, filter, setFilter, segar }
           </div>))}</div> : <div className="empty"><Ikon n="circle-check" />Tidak ada yang terlambat.</div>}
       </div>
       <div className="card"><h3><Ikon n="user-x" />Belum Hadir, Izin & Cuti <span className="m">({d.tidakHadir.length})</span></h3>
-        {d.tidakHadir.length ? <div className="ra-telat">{d.tidakHadir.map((x: Data) => (
+        {d.tidakHadir.length ? <div className="ra-telat ra-gulir">{d.tidakHadir.map((x: Data) => (
           <div key={x.id} className="baris" style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}>
             <div style={{ minWidth: 0 }}><b>{x.nama}</b><div className="tiny muted">{x.dept || '-'}{x.ket && ' · ' + x.ket}</div></div>
             <span className={'badge ' + (WARNA_STATUS[x.status] ?? 'b-gray')}>{LABEL_STATUS[x.status] ?? x.status}</span>

@@ -65,7 +65,7 @@ export function absRow(a: Baris) {
 export function cutiRow(c: Baris) {
   return {
     id: c.id, userId: c.user_id, nik: c.nik ?? '', nama: c.nama ?? '', dept: c.dept ?? '', role: c.role ?? 'karyawan',
-    jenis: c.jenis, mulai: c.mulai, selesai: c.selesai, hari: c.hari, alasan: c.alasan, buktiLink: c.bukti_link ?? '', status: c.status,
+    jenis: c.jenis, mulai: c.mulai, selesai: c.selesai, hari: c.hari, alasan: c.alasan, buktiLink: c.bukti_link ?? '', status: c.status, dibuatOleh: c.dibuat_oleh ?? '',
     approver: c.approver, catatan: c.catatan, tglAjukan: c.created_at,
   };
 }
@@ -75,7 +75,7 @@ export async function pengajuanRow(x: Baris) {
     id: x.id, userId: x.user_id, nama: x.nama ?? '', nik: x.nik ?? '', cabang: x.cabang_nama ?? '',
     jenis: x.jenis, jenisLabel: labelJenis(x.jenis), tanggal: x.tanggal, tanggal2: x.tanggal2,
     shiftId: x.shift_id, shiftNama: sh?.nama ?? '', jamMulai: jam5(x.jam_mulai), jamSelesai: jam5(x.jam_selesai),
-    menit: x.menit, alasan: x.alasan, buktiLink: x.bukti_link ?? '', status: x.status, rekomendasi: x.rekomendasi, perekomendasi: x.perekomendasi,
+    menit: x.menit, alasan: x.alasan, buktiLink: x.bukti_link ?? '', status: x.status, dibuatOleh: x.dibuat_oleh ?? '', rekomendasi: x.rekomendasi, perekomendasi: x.perekomendasi,
     catatanRekomendasi: x.catatan_rekomendasi, approver: x.approver, catatanHr: x.catatan_hr,
     jadwalSebelum: x.jadwal_sebelum, jadwalSesudah: x.jadwal_sesudah, tglAjukan: x.created_at, tglPutusan: x.tgl_putusan,
   };
@@ -83,7 +83,7 @@ export async function pengajuanRow(x: Baris) {
 export function ketRow(x: Baris) {
   return {
     id: x.id, userId: x.user_id, nama: x.nama ?? '', nik: x.nik ?? '', cabang: x.cabang_nama ?? '',
-    jenis: x.jenis, jenisLabel: labelKet(x.jenis), tanggal: x.tanggal, sesi: x.sesi ?? '', alasan: x.alasan, buktiLink: x.bukti_link ?? '', status: x.status,
+    jenis: x.jenis, jenisLabel: labelKet(x.jenis), tanggal: x.tanggal, sesi: x.sesi ?? '', alasan: x.alasan, buktiLink: x.bukti_link ?? '', status: x.status, dibuatOleh: x.dibuat_oleh ?? '',
     rekomendasi: x.rekomendasi, perekomendasi: x.perekomendasi, catatanRekomendasi: x.catatan_rekomendasi,
     approver: x.approver, catatanHr: x.catatan_hr, tglAjukan: x.created_at, tglPutusan: x.tgl_putusan,
   };

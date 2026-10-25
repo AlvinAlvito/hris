@@ -39,7 +39,7 @@ export default function Informasi() {
       <div>
         <div className="card">
           <div className="page-head" style={{ margin: 0 }}><h3 style={{ margin: 0 }}><Ikon n="calendar-days" />Kalender Libur</h3>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <select style={{ width: 'auto' }} value={tahun} onChange={(e) => setTahun(+e.target.value)}>
                 {[-1, 0, 1].map((x) => { const t = new Date().getFullYear() + x; return <option key={t}>{t}</option>; })}</select>
               {admin && <TombolTambahLibur selesai={muatLibur} />}

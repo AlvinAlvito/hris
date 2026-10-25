@@ -203,6 +203,7 @@ CREATE TABLE IF NOT EXISTS pengajuan (
   menit         INT NOT NULL DEFAULT 0,  -- durasi lembur yang diajukan
   alasan        VARCHAR(255) NOT NULL DEFAULT '',
   bukti_link    VARCHAR(1000) NOT NULL DEFAULT '',
+  dibuat_oleh   VARCHAR(150) NOT NULL DEFAULT '',  -- diisi bila dibuat HC / Super Admin atas nama karyawan
   status        ENUM('Menunggu Rekomendasi','Menunggu HR','Disetujui','Ditolak Kepala Toko','Ditolak HR','Dibatalkan')
                 NOT NULL DEFAULT 'Menunggu HR',
   rekomendasi   ENUM('','Direkomendasikan','Tidak Direkomendasikan') NOT NULL DEFAULT '',
@@ -260,6 +261,7 @@ CREATE TABLE IF NOT EXISTS cuti (
   hari        INT  NOT NULL,
   alasan      TEXT NOT NULL,
   bukti_link  VARCHAR(1000) NOT NULL DEFAULT '',
+  dibuat_oleh VARCHAR(150) NOT NULL DEFAULT '',   -- diisi bila dibuat HC / Super Admin atas nama karyawan
   status      ENUM('Menunggu','Disetujui','Ditolak','Dibatalkan') NOT NULL DEFAULT 'Menunggu',
   approver    VARCHAR(150) NOT NULL DEFAULT '',
   catatan     TEXT NULL,
@@ -280,6 +282,7 @@ CREATE TABLE IF NOT EXISTS ketidakhadiran (
   sesi          ENUM('','pagi','siang') NOT NULL DEFAULT '',    -- khusus izin setengah hari
   alasan        VARCHAR(255) NOT NULL DEFAULT '',
   bukti_link    VARCHAR(1000) NOT NULL DEFAULT '',
+  dibuat_oleh   VARCHAR(150) NOT NULL DEFAULT '',  -- diisi bila dibuat HC / Super Admin atas nama karyawan
   status        ENUM('Menunggu Rekomendasi','Menunggu HR','Disetujui','Ditolak Kepala Toko','Ditolak HR','Dibatalkan')
                 NOT NULL DEFAULT 'Menunggu HR',
   rekomendasi   ENUM('','Direkomendasikan','Tidak Direkomendasikan') NOT NULL DEFAULT '',
@@ -521,6 +524,37 @@ CREATE TABLE IF NOT EXISTS payroll_slip (
   UNIQUE KEY uq_slip (periode_id, user_id),
   CONSTRAINT fk_ps_periode FOREIGN KEY (periode_id) REFERENCES payroll_periode(id) ON DELETE CASCADE,
   CONSTRAINT fk_ps_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- pusat notifikasi pengguna (lonceng) & sumber notifikasi push
+CREATE TABLE IF NOT EXISTS notifikasi (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  user_id    INT NOT NULL,
+  jenis      VARCHAR(30)  NOT NULL DEFAULT 'info',     -- pengingat, approval, pengajuan, absensi, pengumuman, payroll, uji
+  judul      VARCHAR(150) NOT NULL,
+  isi        VARCHAR(500) NOT NULL DEFAULT '',
+  tautan     VARCHAR(200) NOT NULL DEFAULT '',
+  kunci      VARCHAR(100) NULL,                        -- pencegah notifikasi ganda (mis. pengingat per hari)
+  dibaca     TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_notif_kunci (kunci),
+  INDEX (user_id, dibaca), INDEX (created_at),
+  CONSTRAINT fk_notif_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- langganan Web Push per perangkat / browser
+CREATE TABLE IF NOT EXISTS push_langganan (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  user_id    INT NOT NULL,
+  endpoint   VARCHAR(700) NOT NULL,
+  p256dh     VARCHAR(200) NOT NULL,
+  auth       VARCHAR(100) NOT NULL,
+  asal       VARCHAR(150) NOT NULL DEFAULT '',          -- origin situs saat berlangganan (lokal vs produksi)
+  ua         VARCHAR(255) NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_push_endpoint (endpoint(255)),
+  INDEX (user_id),
+  CONSTRAINT fk_push_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS settings (

@@ -3,13 +3,14 @@
 import { exec, nilai, q, q1 } from '@/lib/db';
 import { gagal, i, s } from '@/lib/http';
 import {
-  cutiAktif, cutiPending, hitungHari, jadwalHari, jamTeks, KET_TETAP_KERJA, labelKet, logAksi, need,
+  cutiAktif, cutiPending, hitungHari, jadwalHari, jamTeks, KET_TETAP_KERJA, labelJenis, labelKet, logAksi, need,
   perluRekomendasi, sisaCuti, sudahAdaAbsensi,
 } from '@/lib/aturan';
 import { cutiRow, ketRow, pengajuanRow, userPublik } from '@/lib/format';
 import { epoch, jamWIB, POLA_JAM, POLA_TGL, tambahHari, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
 import { simpanBuktiPengajuan, validasiLinkBukti } from './bukti';
+import { beriTahu, penyetujuUntuk } from '@/lib/notifikasi';
 import { hasilHalaman, paramHalaman, polaCari } from '@/lib/paginasi';
 
 const tglId = (t: string) => t.split('-').reverse().join('/');
@@ -39,6 +40,8 @@ export const aksiPengajuan: KumpulanAksi = {
     const buktiLink = await simpanBuktiPengajuan(m, u, 'cuti', ins.insertId);
     if (buktiLink) await exec('UPDATE cuti SET bukti_link=? WHERE id=?', [buktiLink, ins.insertId]);
     await logAksi(u.id, 'ajukan_cuti', `${jenis} ${mulai}..${selesai}`);
+    await beriTahu(penyetujuUntuk(u.id), { jenis: 'pengajuan', tautan: '/cuti', judul: `Pengajuan ${jenis} dari ${u.nama}`,
+      isi: `${tglId(mulai)}${selesai !== mulai ? ' – ' + tglId(selesai) : ''} (${hari} hari). Menunggu persetujuan Anda.` });
     return { pesan: u.role === 'admin' ? 'Terkirim — menunggu persetujuan HC lain atau Super Admin' : 'Pengajuan terkirim, menunggu persetujuan atasan' };
   },
   async cuti_batal(m) {
@@ -95,6 +98,8 @@ export const aksiPengajuan: KumpulanAksi = {
     const buktiLink = await simpanBuktiPengajuan(m, u, 'ketidakhadiran', idBaru[0]);
     if (buktiLink) await exec(`UPDATE ketidakhadiran SET bukti_link=? WHERE id IN (${idBaru.map(Number).join(',')})`, [buktiLink]);
     await logAksi(u.id, 'ajukan_ketidakhadiran', labelKet(jenis) + ' ' + tgl + (sampai !== tgl ? '..' + sampai : ''));
+    await beriTahu(penyetujuUntuk(u.id), { jenis: 'pengajuan', tautan: '/persetujuan', judul: `Pengajuan ${labelKet(jenis)} dari ${u.nama}`,
+      isi: `${tglId(tgl)}${sampai !== tgl ? ' – ' + tglId(sampai) : ''}${alasan ? ' · ' + alasan.slice(0, 120) : ''}. Menunggu persetujuan Anda.` });
     const n = tanggal.length;
     return { pesan: labelKet(jenis) + (n > 1 ? ` ${n} hari` : '') + ' terkirim. Menunggu persetujuan atasan.' };
   },
@@ -164,6 +169,8 @@ export const aksiPengajuan: KumpulanAksi = {
     const buktiLink = await simpanBuktiPengajuan(m, u, 'pengajuan', ins.insertId);
     if (buktiLink) await exec('UPDATE pengajuan SET bukti_link=? WHERE id=?', [buktiLink, ins.insertId]);
     await logAksi(u.id, 'ajukan_' + jenis, tgl);
+    await beriTahu(penyetujuUntuk(u.id), { jenis: 'pengajuan', tautan: '/persetujuan', judul: `Pengajuan ${labelJenis(jenis)} dari ${u.nama}`,
+      isi: `${tglId(tgl)} · ${sesudah}${alasan ? ' · ' + alasan.slice(0, 120) : ''}. Menunggu persetujuan Anda.` });
     return { pesan: 'Pengajuan terkirim. Menunggu keputusan atasan.' };
   },
   async pengajuan_saya() {

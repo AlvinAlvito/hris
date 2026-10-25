@@ -6,6 +6,7 @@ import {
   batasJamTerbuka, cabangPublik, cakupanTim, cutiAktif, jadwalHari, jamKerjaHari, jamTeks, labelKet, logAksi, need, sisaCuti, sqlCakupan,
 } from '@/lib/aturan';
 import { hitungAbsensi } from '@/lib/absensiHitung';
+import { beriTahu } from '@/lib/notifikasi';
 import { jadwalKerjaSah, setgInt, setSetting, settingsPublik } from '@/lib/pengaturan';
 import { absRow, ambilBiodata, userPublik } from '@/lib/format';
 import { epoch, POLA_JAM, POLA_TGL, sekarangSql, tambahHari, tglWIB } from '@/lib/waktu';
@@ -250,6 +251,8 @@ export const aksiAdmin: KumpulanAksi = {
     [h.in_time, h.out_time, h.tgl_pulang, h.menit_kerja, h.kurang_menit, h.lembur_menit, h.langgar_inti, h.terlambat, h.menit_telat, h.lupa_out,
       u.nama, catatan, id]);
     await logAksi(u.id, 'koreksi_absensi', `${a.nik} ${a.tanggal} ${sebelum} jadi ${sesudah} — ${catatan}`);
+    await beriTahu([a.user_id], { jenis: 'absensi', tautan: '/riwayat', judul: `Absensi ${String(a.tanggal).split('-').reverse().join('/')} dikoreksi HC`,
+      isi: `${sebelum} menjadi ${sesudah} oleh ${u.nama} — ${catatan}` });
     const baris = await q1('SELECT a.*, u.nik,u.nama,u.dept FROM absensi a JOIN users u ON u.id=a.user_id WHERE a.id=?', [id]);
     return {
       pesan: jamOut ? `Absensi dikoreksi. Total kerja ${jamTeks(h.menit_kerja)}.` : 'Jam masuk dikoreksi. Jam pulang masih kosong — baris tetap ditandai lupa clock out.',

@@ -10,9 +10,11 @@ import {
 import { barisAbsensiManual, hitungAbsensi } from '@/lib/absensiHitung';
 import { cutiRow, ketRow, pengajuanRow } from '@/lib/format';
 import type { KumpulanAksi } from '../daftar';
+import { beriTahu } from '@/lib/notifikasi';
 import { hasilHalaman, paramHalaman, polaCari } from '@/lib/paginasi';
 
 const PENYETUJU = ['admin', 'atasan'];
+const tglIdn = (t: string) => String(t).split('-').reverse().join('/');
 
 export const aksiPersetujuan: KumpulanAksi = {
   /* ---------- cuti ---------- */
@@ -49,6 +51,8 @@ export const aksiPersetujuan: KumpulanAksi = {
     }
     await exec('UPDATE cuti SET status=?,catatan=?,approver=?,tgl_putusan=NOW() WHERE id=?', [st, cat, labelPenyetuju(u), id]);
     await logAksi(u.id, 'putus_cuti', st + ' #' + id);
+    await beriTahu([c.user_id], { jenis: 'approval', tautan: '/pengajuan', judul: `${c.jenis} Anda ${st.toLowerCase()}`,
+      isi: `${tglIdn(c.mulai)}${c.selesai !== c.mulai ? ' – ' + tglIdn(c.selesai) : ''} · diputus ${labelPenyetuju(u)}${cat ? ' · ' + cat : ''}` });
     return { pesan: 'Pengajuan ' + st.toLowerCase() };
   },
 
@@ -77,6 +81,8 @@ export const aksiPersetujuan: KumpulanAksi = {
     if (!setuju) {
       await exec("UPDATE pengajuan SET status='Ditolak HR', catatan_hr=?, approver=?, tgl_putusan=NOW() WHERE id=?", [catatan, oleh, id]);
       await logAksi(u.id, 'tolak_pengajuan', '#' + id);
+      await beriTahu([x.user_id], { jenis: 'approval', tautan: '/pengajuan', judul: `${labelJenis(x.jenis)} Anda ditolak`,
+        isi: `${tglIdn(x.tanggal)} · ${oleh}${catatan ? ' · ' + catatan : ''}` });
       return { pesan: 'Pengajuan ditolak' };
     }
     if (!['lembur', 'lupa_in', 'lupa_out', 'izin_telat'].includes(x.jenis)) gagal('Jenis pengajuan ini sudah tidak dipakai');
@@ -113,6 +119,8 @@ export const aksiPersetujuan: KumpulanAksi = {
       await exec("UPDATE pengajuan SET status='Disetujui', catatan_hr=?, approver=?, tgl_putusan=NOW() WHERE id=?", [catatan, oleh, id]);
     });
     await logAksi(u.id, 'setujui_pengajuan', `${x.jenis} ${x.tanggal} #${id}`);
+    await beriTahu([x.user_id], { jenis: 'approval', tautan: x.jenis === 'lembur' ? '/pengajuan' : '/riwayat', judul: `${labelJenis(x.jenis)} Anda disetujui`,
+      isi: `${tglIdn(x.tanggal)} · ${pesan.replace(/^Disetujui — /, '')} · ${oleh}${catatan ? ' · ' + catatan : ''}` });
     return { pesan };
   },
 
@@ -141,6 +149,8 @@ export const aksiPersetujuan: KumpulanAksi = {
       [setuju ? 'Disetujui' : 'Ditolak HR', catatan, labelPenyetuju(u), id]);
     if (setuju && x.jenis === 'setengah_hari') await terapkanSetengahHari(x.user_id, x.tanggal, x.sesi);
     await logAksi(u.id, setuju ? 'setujui_ketidakhadiran' : 'tolak_ketidakhadiran', `${labelKet(x.jenis)} ${x.tanggal} #${id}`);
+    await beriTahu([x.user_id], { jenis: 'approval', tautan: '/pengajuan', judul: `${labelKet(x.jenis)} Anda ${setuju ? 'disetujui' : 'ditolak'}`,
+      isi: `${tglIdn(x.tanggal)} · ${labelPenyetuju(u)}${catatan ? ' · ' + catatan : ''}` });
     return { pesan: setuju ? 'Keterangan disetujui dan tercatat' : 'Keterangan ditolak' };
   },
 };

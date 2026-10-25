@@ -304,7 +304,7 @@ function TabSaldo() {
   return (
     <div className="card">
       <div className="page-head" style={{ margin: 0 }}><h3 style={{ margin: 0 }}><Ikon n="history" />Saldo Awal Pajak {th}</h3>
-        <div style={{ display: 'flex', gap: 8 }}><select style={{ width: 'auto' }} value={th} onChange={(e) => setTh(+e.target.value)}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><select style={{ width: 'auto' }} value={th} onChange={(e) => setTh(+e.target.value)}>
           {[thIni - 1, thIni, thIni + 1].map((t) => <option key={t}>{t}</option>)}</select>
           <button className="btn sm auto" disabled={!orang.length} onClick={() => ubah(null)}><Ikon n="plus" />Isi Saldo</button></div></div>
       <div className="note" style={{ marginTop: 12 }}>Bila aplikasi mulai dipakai di tengah tahun, isi total <b>penghasilan bruto</b>, <b>PPh 21 yang sudah dipotong</b>, dan{' '}

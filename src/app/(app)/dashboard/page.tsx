@@ -56,7 +56,7 @@ export default function Dashboard() {
     </div>
     <div>
       <div className="card"><div className="page-head" style={{ margin: 0 }}><h3 style={{ margin: 0 }}><Ikon n="calculator" />Biaya Payroll <span className="m">per periode</span></h3>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {tigaD && <button className="btn ghost sm auto" onClick={() => setPutar(!putar)}><Ikon n="repeat" />{putar ? 'Jeda putar' : 'Putar'}</button>}
           {gl && <button className="btn ghost sm auto" onClick={() => setMode3d(!mode3d)}><Ikon n="layers" />{mode3d ? 'Tampilan 2D' : 'Tampilan 3D'}</button>}
         </div></div><Grafik key={'pay' + tigaD} opsi={o.pay} gl={tigaD} kosong="Belum ada data payroll" /></div>

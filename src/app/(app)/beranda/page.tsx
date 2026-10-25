@@ -128,6 +128,7 @@ export default function Beranda() {
             </div>
           </div>
           {j && <KartuJadwal j={j} a={a} />}
+          <PosisiSaya />
           {me?.lokasiMode === 'kantor' && (
             <div className="card"><h3><Ikon n="map-pin" />Lokasi Absen</h3>
               {me.cabangNama ? (
@@ -206,6 +207,33 @@ function Pengumuman({ info, setInfo }: { info: Data | null; setInfo: (f: (x: Dat
         {info.pengumuman.slice(0, 4).map((p: Data) => <ItemPengumuman key={p.id} p={p} buka={() => buka(p)} />)}
         {info.pengumuman.length > 4 && <Link href="/informasi" className="btn ghost sm" style={{ marginTop: 10 }}>Lihat semua</Link>}
       </>) : <div className="empty"><Ikon n="megaphone" />Belum ada pengumuman.</div>}
+    </div>
+  );
+}
+
+/* posisi pengguna di struktur organisasi: atasan langsung, rekan setim, bawahan */
+function PosisiSaya() {
+  const { me } = useAplikasi();
+  const [rows, setRows] = useState<Data[] | null>(null);
+  useEffect(() => { api<Data[]>('kr_org', {}, true).then(setRows).catch(() => setRows([])); }, []);
+  if (!me || !rows) return null;
+  const atasan = rows.find((x) => x.id === me.atasanId);
+  const rekan = me.atasanId ? rows.filter((x) => x.atasanId === me.atasanId && x.id !== me.id).length : 0;
+  const bawahan = rows.filter((x) => x.atasanId === me.id).length;
+  return (
+    <div className="card"><h3><Ikon n="network" />Posisi Saya</h3>
+      <div className="pos-saya">
+        <div className="pos-baris"><Avatar u={me} ukuran={40} />
+          <div style={{ minWidth: 0 }}><b>{me.jabatan || 'Jabatan belum diisi'}</b><span className="tiny muted">{me.dept || 'Divisi belum diisi'}</span></div></div>
+        {atasan ? <div className="pos-baris"><Avatar u={atasan} ukuran={34} />
+          <div style={{ minWidth: 0 }}><span className="tiny muted">Atasan langsung</span><b>{atasan.nama}</b><span className="tiny muted">{atasan.jabatan}</span></div></div>
+          : <div className="tiny muted">Belum ada atasan langsung yang tercatat.</div>}
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          {rekan > 0 && <span className="badge b-blue"><Ikon n="users" />{rekan} rekan satu tim</span>}
+          {bawahan > 0 && <span className="badge b-purple"><Ikon n="user-check" />{bawahan} bawahan langsung</span>}
+        </div>
+        <Link href="/organisasi" className="btn ghost sm"><Ikon n="network" />Lihat Struktur Organisasi</Link>
+      </div>
     </div>
   );
 }

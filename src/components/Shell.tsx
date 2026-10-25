@@ -7,6 +7,7 @@ import { api, pantauSibuk } from '@/lib/klien/api';
 import { labelRole } from '@/lib/klien/format';
 import { NAV, navTerlihat, urutanBawah, type ItemNav } from '@/lib/klien/nav';
 import { isPenyetuju, useAplikasi, type Me } from './Aplikasi';
+import { BannerNotif, LoncengNotif, PenyediaNotif } from './Notifikasi';
 import { Avatar } from './Avatar';
 import { Ikon } from './Ikon';
 
@@ -83,6 +84,7 @@ export function Shell({ children }: { children: ReactNode }) {
   let grup = '';
 
   return (
+    <PenyediaNotif>
     <div className="shell">
       <div id="loader" className={sibuk ? '' : 'hidden'} />
       <aside id="sidebar">
@@ -122,17 +124,14 @@ export function Shell({ children }: { children: ReactNode }) {
           <div style={{ minWidth: 0 }} id="judulWrap"><h1>{aktif?.t ?? ''}</h1></div>
           <div className="sp" />
           <TombolTampilan />
-          {isPenyetuju(me) && (
-            <Link href="/persetujuan" className="tbtn" title="Persetujuan">
-              <Ikon n="bell" />{hitung('total') ? <span className="dot">{hitung('total') > 99 ? '99+' : hitung('total')}</span> : null}
-            </Link>
-          )}
+          <LoncengNotif />
           <Link href="/profil" className="tb-av" title="Profil"><Avatar u={me} ukuran={38} /></Link>
         </header>
         {me.impersonasi && <div className="impersonasi-banner"><div>
           <b>Anda sedang masuk sebagai {me.nama}</b><span> · Aksi di aplikasi memakai akun karyawan ini.</span>
         </div><button className="btn sm ghost auto" onClick={kembaliSuperAdmin}>Kembali ke Super Admin</button></div>}
         <main id="content">
+          <BannerNotif />
           <div key={path} className={'page ' + arah}>{children}</div>
         </main>
       </div>
@@ -148,6 +147,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <button onClick={() => setLaci(true)}><Ikon n="menu" />Menu</button>
       </nav>
     </div>
+    </PenyediaNotif>
   );
 }
 

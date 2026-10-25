@@ -4,6 +4,7 @@ import { gagal, i, s } from '@/lib/http';
 import { logAksi, need } from '@/lib/aturan';
 import { POLA_TGL, selisihHari, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
+import { beriTahu } from '@/lib/notifikasi';
 
 function pengumumanRow(p: Baris, admin = false) {
   const r: Baris = {
@@ -68,7 +69,12 @@ export const aksiInfo: KumpulanAksi = {
     if (sampai !== '' && sampai < mulai) gagal('Tanggal selesai tidak boleh sebelum tanggal mulai');
     const data = [judul.slice(0, 150), isi.slice(0, 5000), i(m, 'penting') ? 1 : 0, i(m, 'cabangId') || null, mulai, sampai || null];
     if (id) await exec('UPDATE pengumuman SET judul=?, isi=?, penting=?, cabang_id=?, mulai=?, sampai=? WHERE id=?', [...data, id]);
-    else await exec('INSERT INTO pengumuman (judul,isi,penting,cabang_id,mulai,sampai,dibuat_oleh) VALUES (?,?,?,?,?,?,?)', [...data, u.id]);
+    else {
+      await exec('INSERT INTO pengumuman (judul,isi,penting,cabang_id,mulai,sampai,dibuat_oleh) VALUES (?,?,?,?,?,?,?)', [...data, u.id]);
+      const cab = i(m, 'cabangId') || null;
+      const tujuan = (await q(`SELECT id FROM users WHERE aktif=1 AND id<>?${cab ? ' AND cabang_id=?' : ''}`, cab ? [u.id, cab] : [u.id])).map((x) => x.id as number);
+      await beriTahu(tujuan, { jenis: 'pengumuman', tautan: '/informasi', judul: (i(m, 'penting') ? '📢 Penting: ' : 'Pengumuman: ') + judul.slice(0, 120), isi: isi.slice(0, 200) });
+    }
     await logAksi(u.id, id ? 'ubah_pengumuman' : 'buat_pengumuman', judul);
     return { pesan: 'Pengumuman ' + (id ? 'diperbarui' : 'diterbitkan') };
   },

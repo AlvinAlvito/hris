@@ -3,7 +3,8 @@
    HC / Super Admin melihat seluruh karyawan; Supervisor hanya timnya (disaring di server). */
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAplikasi } from '@/components/Aplikasi';
+import { isAdminUp, useAplikasi } from '@/components/Aplikasi';
+import { AksiAdmin, FormPengajuanKaryawan, FormUbahKet } from '@/components/PengajuanAdmin';
 import { Ikon } from '@/components/Ikon';
 import { TautanBukti } from '@/components/BuktiPengajuan';
 import { NavigasiHalaman, type HalamanData } from '@/components/NavigasiHalaman';
@@ -21,15 +22,19 @@ function Status({ st }: { st: string }) {
 }
 
 export default function Persetujuan() {
-  const { inbox, muatInbox } = useAplikasi();
+  const { me, inbox, muatInbox, bukaSheet } = useAplikasi();
   const router = useRouter();
-  const [aktif, setAktif] = useState<string | null>(null);
+  const [aktif, setAktif] = useState<string | null>(null), [segar, setSegar] = useState(0);
   useEffect(() => { muatInbox(); }, [muatInbox]);
   const item = inbox.semua;
   const pilih = aktif ?? item.find((x) => x.jumlah && INLINE.includes(x.kunci))?.kunci ?? 'pengajuan';
   const adaTindakLanjut = item.some((x) => x.jumlah > 0 && !INLINE.includes(x.kunci));
   const klik = (k: string) => (INLINE.includes(k) ? setAktif(k) : router.push(TUJUAN[k] ?? '/dashboard'));
   return (<>
+    {isAdminUp(me) && <div className="pa-cta">
+      <div><b>Karyawan lupa mengajukan?</b><div className="tiny muted">Buat izin, dinas luar kota, WFH, sakit, cuti, atau izin terlambat atas nama karyawan — sekaligus untuk banyak orang.</div></div>
+      <button className="btn auto" onClick={() => bukaSheet(<FormPengajuanKaryawan selesai={() => { muatInbox(); setSegar((x) => x + 1); }} />, { besar: true })}>
+        <Ikon n="user-plus" />Buat Pengajuan untuk Karyawan</button></div>}
     <div className="kpis">
       {item.map((x) => (
         <button key={x.kunci} className={'kpi lap-k' + (x.jumlah ? '' : ' c-gray') + (pilih === x.kunci ? ' on' : '')} style={{ opacity: x.jumlah ? 1 : 0.6 }} onClick={() => klik(x.kunci)}>
@@ -39,15 +44,15 @@ export default function Persetujuan() {
     {adaTindakLanjut && <div className="note" style={{ marginTop: 14 }}>
       Angka pada kartu termasuk pengingat dan tindak lanjut di menu lain. Klik kartu <b>Absensi menunggu approval</b> atau <b>Lupa clock out</b> untuk membuka Rekap Absensi, <b>Pengajuan cuti</b> untuk membuka Cuti. Daftar pengajuan yang bisa diputus langsung muncul di panel bawah saat kartunya dipilih.
     </div>}
-    {pilih === 'pengajuan' && <DaftarPengajuan />}
-    {pilih === 'ket' && <DaftarIzin />}
+    {pilih === 'pengajuan' && <DaftarPengajuan key={'p' + segar} />}
+    {pilih === 'ket' && <DaftarIzin key={'k' + segar} />}
   </>);
 }
 
 function Kepala({ ikon, judul, opsi, filter, setFilter, ekspor }: { ikon: string; judul: string; opsi: string[]; filter: string; setFilter: (v: string) => void; ekspor: () => void }) {
   return (
     <div className="page-head" style={{ margin: 0 }}><h3 style={{ margin: 0 }}><Ikon n={ikon} />{judul}</h3>
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <select style={{ width: 'auto' }} value={filter} onChange={(e) => setFilter(e.target.value)}>
           {opsi.map((o) => <option key={o} value={o}>{o === 'ALL' ? 'Semua' : teksStatus(o)}</option>)}</select>
         <button className="btn ghost sm auto" onClick={ekspor}><Ikon n="download" />Excel</button></div></div>
@@ -80,10 +85,14 @@ const Tombol = ({ id, putus, ya = 'Setujui' }: { id: number; putus: (id: number,
 );
 
 function DaftarPengajuan() {
-  const { me, galat } = useAplikasi();
+  const { me, galat, yakin, toast, muatInbox } = useAplikasi();
   const [filter, setFilter] = useState('Menunggu HR');
   const { list, halaman, page, setPage, search, setSearch, muat } = useDaftar('adm_pengajuan', filter);
   const putus = useKeputusan('adm_pengajuan_putus', muat);
+  const hapus = async (x: Data) => {
+    if (!(await yakin(`Hapus ${x.jenisLabel} ${x.nama} tanggal ${tglPendek(x.tanggal)}?`, 'Data dihapus permanen. Hasil yang sudah diterapkan ke absensi (jam lupa absen) tidak ikut dibatalkan.', { ya: 'Hapus' }))) return;
+    api<{ pesan: string }>('adm_pengajuan_hapus', { id: x.id }).then((r) => { toast(r.pesan); muat(); muatInbox(); }).catch(galat);
+  };
   const ekspor = () => api<Data[]>('adm_pengajuan', { status: 'ALL', all: true, search }).then((l) => keExcel(l.map((x) => ({ Nama: x.nama, NIK: x.nik, Lokasi: x.cabang, Jenis: x.jenisLabel,
     Tanggal: x.tanggal, Jam: x.jamMulai ? x.jamMulai + (x.jamSelesai ? `–${x.jamSelesai}` : '') : '', Sebelum: x.jadwalSebelum, Sesudah: x.jadwalSesudah, Alasan: x.alasan,
     Status: teksStatus(x.status), 'Diputus Oleh': x.approver, 'Catatan Atasan': x.catatanHr })), 'Pengajuan', 'pengajuan-lembur-absen-' + todayStr())).catch(galat);
@@ -100,17 +109,23 @@ function DaftarPengajuan() {
           <TautanBukti link={x.buktiLink} />
           {x.approver && <div className="kv"><span>Diputus oleh</span><span>{x.approver}</span></div>}
           {x.catatanHr && <div className="kv"><span>Catatan atasan</span><span style={{ textAlign: 'right' }}>{x.catatanHr}</span></div>}
+          {x.dibuatOleh && <div className="kv"><span>Dibuat oleh</span><span><span className="badge b-purple">{x.dibuatOleh}</span></span></div>}
           {/^Menunggu/.test(x.status) && x.userId !== me?.id && <Tombol id={x.id} putus={putus} />}
+          {isAdminUp(me) && <AksiAdmin hapus={() => hapus(x)} />}
         </div>))}<NavigasiHalaman page={page} total={halaman?.total ?? 0} totalPages={halaman?.totalPages ?? 1} ubah={setPage} /></> : <div className="empty">Tidak ada pengajuan pada filter ini.</div>}
     </div>
   );
 }
 
 function DaftarIzin() {
-  const { me, galat } = useAplikasi();
+  const { me, galat, bukaSheet, yakin, toast, muatInbox } = useAplikasi();
   const [filter, setFilter] = useState('Menunggu HR');
   const { list, halaman, page, setPage, search, setSearch, muat } = useDaftar('adm_ketidakhadiran', filter);
   const putus = useKeputusan('adm_ket_putus', muat);
+  const hapus = async (x: Data) => {
+    if (!(await yakin(`Hapus ${x.jenisLabel} ${x.nama} tanggal ${tglPendek(x.tanggal)}?`, 'Data dihapus permanen.', { ya: 'Hapus' }))) return;
+    api<{ pesan: string }>('adm_ket_hapus', { id: x.id }).then((r) => { toast(r.pesan); muat(); muatInbox(); }).catch(galat);
+  };
   const ekspor = () => api<Data[]>('adm_ketidakhadiran', { status: 'ALL', all: true, search }).then((l) => keExcel(l.map((x) => ({ Nama: x.nama, NIK: x.nik, Lokasi: x.cabang,
     Jenis: x.jenisLabel + (x.sesi ? ` (${x.sesi})` : ''), Tanggal: x.tanggal, Keterangan: x.alasan, Status: teksStatus(x.status), 'Diputus Oleh': x.approver,
     'Catatan Atasan': x.catatanHr })), 'Izin', 'izin-wfh-dinas-' + todayStr())).catch(galat);
@@ -125,7 +140,9 @@ function DaftarIzin() {
           <TautanBukti link={x.buktiLink} />
           {x.catatanHr && <div className="kv"><span>Catatan atasan</span><span style={{ textAlign: 'right' }}>{x.catatanHr}</span></div>}
           {x.approver && <div className="kv"><span>Diputus</span><span style={{ textAlign: 'right' }}>{x.approver}</span></div>}
+          {x.dibuatOleh && <div className="kv"><span>Dibuat oleh</span><span><span className="badge b-purple">{x.dibuatOleh}</span></span></div>}
           {/^Menunggu/.test(x.status) && x.userId !== me?.id && <Tombol id={x.id} putus={putus} />}
+          {isAdminUp(me) && <AksiAdmin ubah={() => bukaSheet(<FormUbahKet x={x} selesai={() => { muat(); muatInbox(); }} />)} hapus={() => hapus(x)} />}
         </div>))}<NavigasiHalaman page={page} total={halaman?.total ?? 0} totalPages={halaman?.totalPages ?? 1} ubah={setPage} /></> : <div className="empty">Tidak ada pengajuan pada filter ini.</div>}
     </div>
   );

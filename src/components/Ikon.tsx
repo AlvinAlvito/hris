@@ -1,5 +1,5 @@
 import {
-  AlarmClock, ArrowLeftRight, ChartPie, CheckCheck, GitBranch, UserX, Atom, BadgeCheck, Banknote, Bell, Briefcase, Building2, Cake, Calculator, Calendar, CalendarDays, Camera, Check,
+  AlarmClock, ArrowLeftRight, ChartPie, CheckCheck, ChevronUp, GitBranch, UserX, Atom, BadgeCheck, Banknote, Bell, Briefcase, Building2, Cake, Calculator, Calendar, CalendarDays, Camera, Check,
   ChevronDown, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, CircleX, Clock, ClockAlert, Coffee, Download, Eye, EyeOff, FileClock,
   ExternalLink, FileHeart, FileSpreadsheet, FileText, Filter, Fingerprint, FlaskConical, GraduationCap, HandCoins, HeartPulse, History, Hourglass, House,
   IdCard, Image, Inbox, Info, KeyRound, Landmark, Layers, LayoutDashboard, ListChecks, Lock, LogIn, LogOut, Mail, MapPin, Medal, Megaphone,
@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 const IKON: Record<string, LucideIcon> = {
-  'alarm-clock': AlarmClock, 'chart-pie': ChartPie, 'check-check': CheckCheck, 'git-branch': GitBranch, 'user-x': UserX,
+  'alarm-clock': AlarmClock, 'chart-pie': ChartPie, 'check-check': CheckCheck, 'chevron-up': ChevronUp, 'git-branch': GitBranch, 'user-x': UserX,
   'arrow-left-right': ArrowLeftRight, atom: Atom, 'badge-check': BadgeCheck, banknote: Banknote, bell: Bell, briefcase: Briefcase,
   'building-2': Building2, cake: Cake, calculator: Calculator, calendar: Calendar, 'calendar-days': CalendarDays, camera: Camera,
   check: Check, 'chevron-down': ChevronDown, 'chevron-left': ChevronLeft, 'chevron-right': ChevronRight, 'circle-alert': CircleAlert,

@@ -1,14 +1,18 @@
 /* Rekap absensi untuk atasan: persetujuan absensi & ringkasan harian.
    HC / Super Admin melihat seluruh karyawan; Supervisor hanya tim di bawahnya.
    Absensi DITOLAK dihitung tidak hadir di payroll (lihat lib/statusHarian.ts). */
+import { unlink } from 'node:fs/promises';
 import { exec, q, q1 } from '@/lib/db';
+import { folderPenyimpanan, jalurAman } from '@/lib/berkas';
 import { b, gagal, i, s } from '@/lib/http';
 import { cakupanTim, labelKet, labelPenyetuju, logAksi, need, pastikanDalamCakupan, sqlCakupan, jamKerjaHari } from '@/lib/aturan';
 import { statusHarian } from '@/lib/statusHarian';
 import { POLA_TGL, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
+import { beriTahu } from '@/lib/notifikasi';
 
 const jam5 = (t: unknown) => (t ? String(t).slice(0, 5) : '');
+const tglIdn = (t: string) => String(t).split('-').reverse().join('/');
 
 export const aksiRekap: KumpulanAksi = {
   async abs_putus(m) {
@@ -21,6 +25,9 @@ export const aksiRekap: KumpulanAksi = {
     await exec('UPDATE absensi SET approval=?, approval_oleh=?, approval_catatan=?, tgl_approval=NOW() WHERE id=?',
       [setuju ? 'disetujui' : 'ditolak', labelPenyetuju(u), catatan, id]);
     await logAksi(u.id, setuju ? 'setujui_absensi' : 'tolak_absensi', `${a.nik} ${a.tanggal}` + (catatan ? ` — ${catatan}` : ''));
+    await beriTahu([a.user_id], { jenis: 'absensi', tautan: '/riwayat', judul: `Absensi ${tglIdn(a.tanggal)} ${setuju ? 'disetujui' : 'ditolak'}`,
+      isi: setuju ? `Disetujui ${labelPenyetuju(u)}${catatan ? ' · ' + catatan : ''}`
+        : `Ditolak ${labelPenyetuju(u)}: ${catatan}. Hari itu dihitung tidak hadir — hubungi atasan bila keliru.` });
     return { pesan: setuju ? `Absensi ${a.nama} disetujui` : `Absensi ${a.nama} ditolak — dihitung tidak hadir` };
   },
   /* setujui banyak sekaligus; baris di luar tim atau milik sendiri dilewati */
@@ -28,10 +35,28 @@ export const aksiRekap: KumpulanAksi = {
     const u = await need(['atasan']), tim = await cakupanTim(u);
     const ids = (Array.isArray(m.ids) ? m.ids : []).map(Number).filter((x: number) => Number.isInteger(x) && x > 0).slice(0, 500);
     if (!ids.length) gagal('Tidak ada absensi yang dipilih');
-    const r = await exec(`UPDATE absensi SET approval='disetujui', approval_oleh=?, approval_catatan='', tgl_approval=NOW()
-      WHERE id IN (${ids.join(',')}) AND approval='menunggu' AND in_time IS NOT NULL AND user_id<>?${sqlCakupan(tim, 'user_id')}`, [labelPenyetuju(u), u.id]);
+    const syarat = `id IN (${ids.join(',')}) AND approval='menunggu' AND in_time IS NOT NULL AND user_id<>?${sqlCakupan(tim, 'user_id')}`;
+    const target = await q(`SELECT user_id, tanggal FROM absensi WHERE ${syarat}`, [u.id]);
+    const r = await exec(`UPDATE absensi SET approval='disetujui', approval_oleh=?, approval_catatan='', tgl_approval=NOW() WHERE ${syarat}`, [labelPenyetuju(u), u.id]);
+    for (const t of target) await beriTahu([t.user_id], { jenis: 'absensi', tautan: '/riwayat', judul: `Absensi ${tglIdn(t.tanggal)} disetujui`, isi: `Disetujui ${labelPenyetuju(u)}` });
     await logAksi(u.id, 'setujui_absensi_massal', `${r.affectedRows} baris`);
     return { pesan: `${r.affectedRows} absensi disetujui` };
+  },
+
+  /* hapus satu baris absensi beserta fotonya (HC / Super Admin) — tidak bisa dibatalkan */
+  async abs_hapus(m) {
+    const u = await need(['admin']);
+    const id = i(m, 'id');
+    const a = await q1('SELECT a.*, x.nama, x.nik FROM absensi a JOIN users x ON x.id=a.user_id WHERE a.id=?', [id]);
+    if (!a) gagal('Data absensi tidak ditemukan');
+    await exec('DELETE FROM absensi WHERE id=?', [id]);
+    const dasar = folderPenyimpanan('uploads');
+    for (const f of [a.in_photo, a.out_photo]) {
+      const p = f ? jalurAman(dasar, String(f)) : null;
+      if (p) await unlink(p).catch(() => {});
+    }
+    await logAksi(u.id, 'hapus_absensi', `${a.nik} ${a.tanggal} masuk ${jam5(a.in_time) || '-'} pulang ${jam5(a.out_time) || '-'}`);
+    return { pesan: `Absensi ${a.nama} tanggal ${a.tanggal} dihapus` };
   },
 
   /* ringkasan satu hari: komposisi kehadiran, keterlambatan, sebaran jam masuk, per divisi, yang belum hadir */

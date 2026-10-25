@@ -19,8 +19,10 @@ import { aksiLaporan } from './aksi/laporan';
 import { aksiPayroll } from './aksi/payroll';
 import { aksiOrganisasi } from './aksi/organisasi';
 import { aksiRekap } from './aksi/rekap';
+import { aksiNotifikasi } from './aksi/notifikasi';
+import { aksiPengajuanAdmin } from './aksi/pengajuanAdmin';
 
 export const AKSI: KumpulanAksi = {
   ...aksiAuth, ...aksiAbsen, ...aksiPengajuan, ...aksiInfo, ...aksiInbox, ...aksiBranding,
-  ...aksiPersetujuan, ...aksiAdmin, ...aksiKaryawan, ...aksiDashboard, ...aksiLaporan, ...aksiPayroll, ...aksiOrganisasi, ...aksiRekap,
+  ...aksiPersetujuan, ...aksiAdmin, ...aksiKaryawan, ...aksiDashboard, ...aksiLaporan, ...aksiPayroll, ...aksiOrganisasi, ...aksiRekap, ...aksiNotifikasi, ...aksiPengajuanAdmin,
 };

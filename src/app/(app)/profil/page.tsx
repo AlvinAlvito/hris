@@ -6,6 +6,7 @@ import { isDir, useAplikasi } from '@/components/Aplikasi';
 import { Avatar } from '@/components/Avatar';
 import { DaftarDokumen } from '@/components/Dokumen';
 import { Ikon } from '@/components/Ikon';
+import { PengaturanNotif } from '@/components/Notifikasi';
 import { api } from '@/lib/klien/api';
 import { bacaBerkas } from '@/lib/klien/berkas';
 import { FIELD_BIO, STATUS_KERJA, teksPilihan } from '@/lib/klien/biodata';
@@ -71,7 +72,7 @@ export default function Profil() {
         {tab === 'dok' && <div className="card"><h3><Ikon n="file-text" />Dokumen Saya</h3>
           <div className="note">Dokumen tersimpan privat — hanya Anda dan HC yang dapat membukanya.</div>
           <DaftarDokumen list={d.dokumen} userId={u.id} jenis={d.jenisDokumen ?? ['KTP', 'Kontrak Kerja', 'Ijazah', 'Lainnya']} segarkan={muat} /></div>}
-        {tab === 'akun' && <Akun />}
+        {tab === 'akun' && <><PengaturanNotif /><Akun /></>}
       </>}
     </div>
   );

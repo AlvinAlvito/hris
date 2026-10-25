@@ -19,6 +19,7 @@ import { hitungStatus, statusHarian } from '@/lib/statusHarian';
 import { selisihHari, tglWIB } from '@/lib/waktu';
 import { hasilHalaman, paramHalaman } from '@/lib/paginasi';
 import type { KumpulanAksi } from '../daftar';
+import { beriTahu } from '@/lib/notifikasi';
 
 const PERAN_PAYROLL = ['admin', 'finance', 'direktur'];
 const KUNCI_SETELAN = ['bpjs_kes_p', 'bpjs_kes_k', 'bpjs_kes_batas', 'jht_p', 'jht_k', 'jkk', 'jkm', 'jp_p', 'jp_k', 'jp_batas',
@@ -363,6 +364,8 @@ export const aksiPayroll: KumpulanAksi = {
       await exec("UPDATE payroll_periode SET status='final', final_oleh=?, tgl_final=NOW(), catatan=? WHERE id=?", [u.nama, s(m, 'catatan').slice(0, 255), per.id]);
     });
     await logAksi(u.id, 'finalkan_payroll', per.periode);
+    const pemilik = (await q('SELECT user_id FROM payroll_slip WHERE periode_id=?', [per.id])).map((x) => x.user_id as number);
+    await beriTahu(pemilik, { jenis: 'payroll', tautan: '/slip', kunci: `slip:${per.periode}`, judul: `Slip gaji ${per.periode} sudah terbit`, isi: 'Buka menu Slip Gaji untuk melihat rinciannya.' });
     return { pesan: `Payroll ${per.periode} final. Slip sudah dapat dilihat karyawan.` };
   },
   async py_buka(m) {
