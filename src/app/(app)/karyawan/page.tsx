@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { isDir, useAplikasi, type Me } from '@/components/Aplikasi';
+import { type DataOrganisasi } from '@/components/MasterOrganisasi';
 import { Avatar } from '@/components/Avatar';
 import { BadgeStatusKerja } from '@/components/BadgeStatusKerja';
 import { DaftarDokumen } from '@/components/Dokumen';
@@ -21,18 +22,19 @@ export default function Karyawan() {
   const { bukaSheet, galat } = useAplikasi();
   const [list, setList] = useState<Data[] | null>(null);
   const [cabang, setCabang] = useState<Data[]>([]);
-  const [shift, setShift] = useState<Data[]>([]);
+  const [org, setOrg] = useState<DataOrganisasi | null>(null);
   const [kontrak, setKontrak] = useState<Data[]>([]);
   const [cari, setCari] = useState('');
 
   const muat = useCallback(() => {
-    Promise.all([api<Data[]>('adm_users'), api<Data[]>('adm_cabang', {}, true), api<Data[]>('adm_shift', {}, true)])
-      .then(([u, c, s]) => { setList(u); setCabang(c); setShift(s); }).catch(galat);
+    Promise.all([api<Data[]>('adm_users'), api<Data[]>('adm_cabang', {}, true)])
+      .then(([u, c]) => { setList(u); setCabang(c); }).catch(galat);
+    api<DataOrganisasi>('org_data', {}, true).then(setOrg).catch(() => {});
     api<Data[]>('kr_kontrak', { hari: 45 }, true).then(setKontrak).catch(() => {});
   }, [galat]);
   useEffect(() => { muat(); }, [muat]);
 
-  const form = (u: Data | null) => bukaSheet(<FormKaryawan u={u} list={list ?? []} cabang={cabang} shift={shift} selesai={muat} />);
+  const form = (u: Data | null) => bukaSheet(<FormKaryawan u={u} list={list ?? []} cabang={cabang} org={org} selesai={muat} />);
   const profil = (id: number) => bukaSheet(<ProfilKaryawan id={id} edit={(u) => form(u)} />, { besar: true });
   const ekspor = () => api<Data[]>('adm_users').then((l) => keExcel(l.map((u) => ({
     NIK: u.nik, Nama: u.nama, Jabatan: u.jabatan, Divisi: u.dept, Peran: labelRole(u.role), 'Lokasi Kerja': u.cabangNama || '',
@@ -150,14 +152,15 @@ function TombolMasukSebagai({ u, ringkas = false }: { u: Data; ringkas?: boolean
 }
 
 /* ---------- form tambah / edit karyawan ---------- */
-function FormKaryawan({ u, list, cabang, shift, selesai, awal }: { u: Data | null; list: Data[]; cabang: Data[]; shift: Data[]; selesai: () => void; awal?: Data }) {
+function FormKaryawan({ u, list, cabang, org, selesai, awal }: { u: Data | null; list: Data[]; cabang: Data[]; org: DataOrganisasi | null; selesai: () => void; awal?: Data }) {
   const { me, settings, bukaSheet, tutupSheet, yakin, toast, galat } = useAplikasi();
   const [tab, setTab] = useState('kerja');
   const [v, setV] = useState<Data>(() => awal ?? ({
     nik: u?.nik ?? '', pin: u ? '' : '123456', nama: u?.nama ?? '', jabatan: u?.jabatan ?? '', dept: u?.dept ?? '', cabangId: u?.cabangId ?? 0,
-    tglMasuk: u?.tglMasuk ?? todayStr(), role: u?.role === 'admin' || u?.role === 'direktur' ? u.role : 'karyawan', atasanId: u?.atasanId ?? 0,
+    tglMasuk: u?.tglMasuk ?? todayStr(), role: ['admin', 'direktur', 'atasan'].includes(u?.role) ? u!.role : 'karyawan', atasanId: u?.atasanId ?? 0,
+    unitId: u?.unitId ?? 0, jabatanId: u?.jabatanId ?? 0,
     statusKerja: u?.statusKerja ?? 'tetap', tglKeluar: u?.tglKeluar ?? '', kontrakMulai: u?.kontrakMulai ?? '', kontrakSelesai: u?.kontrakSelesai ?? '',
-    cutiMode: u?.cutiMode ?? 'auto', jatah: u?.jatah ?? settings.jatahDefault, jamMode: u?.jamMode ?? 'tetap', shiftId: u?.shiftId ?? shift[0]?.id ?? 0,
+    cutiMode: u?.cutiMode ?? 'auto', jatah: u?.jatah ?? settings.jatahDefault, jamMode: u?.jamMode === 'fleksibel' ? 'fleksibel' : 'tetap',
     targetMenit: u?.targetMenit ?? 480, intiMulai: u?.intiMulai ?? '', intiSelesai: u?.intiSelesai ?? '', liburHari: u?.liburHari ?? '',
     lokasiMode: u?.lokasiMode ?? 'kantor', minJarakKm: u?.minJarakKm ?? settings.minJarakDefault, baseLabel: u?.baseLabel ?? '',
     baseLat: u?.baseLat ?? null, baseLng: u?.baseLng ?? null, aktif: u ? (u.aktif ? 1 : 0) : 1,
@@ -168,7 +171,7 @@ function FormKaryawan({ u, list, cabang, shift, selesai, awal }: { u: Data | nul
 
   // setelah memilih titik, form dibuka lagi dengan isian terakhir
   const pilihTitik = () => {
-    const isi = v, buka = (x: Data) => bukaSheet(<FormKaryawan u={u} list={list} cabang={cabang} shift={shift} selesai={selesai} awal={x} />);
+    const isi = v, buka = (x: Data) => bukaSheet(<FormKaryawan u={u} list={list} cabang={cabang} org={org} selesai={selesai} awal={x} />);
     bukaSheet(<PilihPeta judul="Titik Awal Kunjungan" lat={v.baseLat} lng={v.baseLng} radius={(+v.minJarakKm || 2.5) * 1000} tipeRadius="luar"
       simpan={(lat, lng) => { buka({ ...isi, baseLat: lat, baseLng: lng }); toast('Titik awal dipilih, tekan Simpan'); }} batal={() => buka(isi)} />);
   };
@@ -179,7 +182,7 @@ function FormKaryawan({ u, list, cabang, shift, selesai, awal }: { u: Data | nul
     setKirim(true);
     try {
       const r = await api<{ pesan: string }>('adm_user_save', { ...v, id: u?.id ?? 0, cabangId: +v.cabangId, atasanId: +v.atasanId, jatah: +v.jatah,
-        shiftId: +v.shiftId, targetMenit: +v.targetMenit, minJarakKm: +v.minJarakKm, aktif: +v.aktif });
+        unitId: +v.unitId, jabatanId: +v.jabatanId, targetMenit: +v.targetMenit, minJarakKm: +v.minJarakKm, aktif: +v.aktif });
       tutupSheet(); toast(r.pesan); selesai();
     } catch (e) { galat(e); setKirim(false); }
   };
@@ -200,15 +203,23 @@ function FormKaryawan({ u, list, cabang, shift, selesai, awal }: { u: Data | nul
       <div className="row"><div><label>NIK / ID</label><input value={v.nik} onChange={set('nik')} /></div>
         <div><label>PIN {u && <span className="tiny">(kosongkan bila tidak diubah)</span>}</label><input value={v.pin} onChange={set('pin')} inputMode="numeric" placeholder={u ? '••••••' : ''} /></div></div>
       <label>Nama lengkap</label><input value={v.nama} onChange={set('nama')} />
-      <div className="row"><div><label>Jabatan</label><input value={v.jabatan} onChange={set('jabatan')} /></div>
-        <div><label>Divisi</label><input value={v.dept} onChange={set('dept')} /></div></div>
+      {org && org.unit.length ? (<div className="row">
+        <div><label>Unit organisasi / divisi</label><select value={v.unitId} onChange={(e) => setV((x) => ({ ...x, unitId: +e.target.value,
+          jabatanId: org.jabatan.find((j) => j.id === +x.jabatanId)?.unitId === +e.target.value ? x.jabatanId : 0 }))}>
+          <option value={0}>— pilih unit —</option>{org.unit.map((o) => <option key={o.id} value={o.id}>{o.nama}{o.indukNama && ` · ${o.indukNama}`}</option>)}</select></div>
+        <div><label>Jabatan</label><select value={v.jabatanId} onChange={set('jabatanId')}><option value={0}>— pilih jabatan —</option>
+          {org.jabatan.filter((j) => !+v.unitId || j.unitId === +v.unitId || !j.unitId).map((j) => <option key={j.id} value={j.id}>{j.nama}</option>)}</select></div>
+      </div>) : (<div className="row"><div><label>Jabatan</label><input value={v.jabatan} onChange={set('jabatan')} /></div>
+        <div><label>Divisi</label><input value={v.dept} onChange={set('dept')} /></div></div>)}
+      {org && org.unit.length > 0 && <div className="tiny muted" style={{ marginTop: 4 }}>Unit & jabatan baru ditambahkan di menu Struktur Organisasi.</div>}
       <label>Lokasi kerja</label>
       <select value={v.cabangId} onChange={set('cabangId')}><option value={0}>— pilih lokasi —</option>
         {cabang.map((c) => <option key={c.id} value={c.id}>{c.nama}{c.tipe === 'pusat' ? ' (Kantor Pusat)' : ''}{c.aktif ? '' : ' — nonaktif'}</option>)}</select>
       <div className="row"><div><label>Tanggal masuk kerja</label><input type="date" value={v.tglMasuk} onChange={set('tglMasuk')} /></div>
-        <div><label>Peran</label><select value={v.role} onChange={set('role')}><option value="karyawan">Pegawai</option><option value="admin">HC (kendali penuh)</option>
+        <div><label>Peran</label><select value={v.role} onChange={set('role')}><option value="karyawan">Staff</option>
+          <option value="atasan">Supervisor (approve tim di bawahnya)</option><option value="admin">HC (kendali penuh)</option>
           {isDir(me) && <option value="direktur">Super Admin</option>}</select></div></div>
-      <label>Atasan langsung <span className="tiny">(untuk struktur organisasi)</span></label>
+      <label>Atasan langsung <span className="tiny">(struktur organisasi & siapa Supervisor yang meng-approve)</span></label>
       <select value={v.atasanId} onChange={set('atasanId')}><option value={0}>— tidak ada —</option>
         {list.filter((x) => x.aktif && x.id !== u?.id).map((x) => <option key={x.id} value={x.id}>{x.nama} · {x.jabatan}</option>)}</select>
       <div className="row"><div><label>Status kepegawaian</label><select value={v.statusKerja} onChange={set('statusKerja')}>
@@ -224,11 +235,8 @@ function FormKaryawan({ u, list, cabang, shift, selesai, awal }: { u: Data | nul
       <label>Jatah cuti per tahun (hari)</label><input type="number" min={0} max={60} value={v.jatah} onChange={set('jatah')} />
       <div className="sep" />
       <label style={{ marginTop: 0 }}>Pola jam kerja</label>
-      <select value={v.jamMode} onChange={set('jamMode')}><option value="tetap">Tetap — jam masuk/pulang sesuai pengaturan kantor</option>
-        <option value="shift">Shift — mengikuti jadwal shift</option><option value="fleksibel">Fleksibel — bebas jam masuk, wajib genap sekian jam</option></select>
-      {v.jamMode === 'shift' && (<><label>Shift bawaan</label><select value={v.shiftId} onChange={set('shiftId')}>
-        {shift.map((sh) => <option key={sh.id} value={sh.id}>{sh.nama} ({sh.jamMasuk}–{sh.jamPulang}){sh.aktif ? '' : ' — nonaktif'}</option>)}</select>
-        <div className="tiny muted" style={{ marginTop: 4 }}>Dipakai bila tanggal tersebut belum diatur di menu Shift & Jadwal.</div></>)}
+      <select value={v.jamMode} onChange={set('jamMode')}><option value="tetap">Tetap — jam kerja per hari sesuai Pengaturan</option>
+        <option value="fleksibel">Fleksibel — bebas jam masuk, wajib genap sekian jam</option></select>
       {v.jamMode === 'fleksibel' && (<>
         <label>Target jam kerja per hari</label><select value={v.targetMenit} onChange={set('targetMenit')}>
           {[240, 300, 360, 420, 480, 540, 600].map((mn) => <option key={mn} value={mn}>{mn / 60} jam</option>)}</select>
@@ -236,7 +244,7 @@ function FormKaryawan({ u, list, cabang, shift, selesai, awal }: { u: Data | nul
           <div><label>Jam inti selesai</label><input type="time" value={v.intiSelesai} onChange={set('intiSelesai')} /></div></div></>)}
       <label>Hari libur mingguan</label>
       <select value={v.liburHari ?? ''} onChange={set('liburHari')}>
-        {[['', 'Bawaan (akhir pekan untuk non-shift; shift ikut roster)'], ['0', 'Tidak ada libur mingguan tetap'], ['7', 'Setiap Minggu'], ['6', 'Setiap Sabtu'],
+        {[['', 'Bawaan (mengikuti hari libur di Jam Kerja Pengaturan)'], ['0', 'Tidak ada libur mingguan tetap'], ['7', 'Setiap Minggu'], ['6', 'Setiap Sabtu'],
           ['6,7', 'Sabtu & Minggu'], ['5', 'Setiap Jumat']].map(([k, t]) => <option key={k} value={k}>{t}</option>)}</select>
       <div className="sep" />
       <label style={{ marginTop: 0 }}>Mode lokasi absen</label>
@@ -251,7 +259,7 @@ function FormKaryawan({ u, list, cabang, shift, selesai, awal }: { u: Data | nul
       <label style={{ marginTop: 0 }}>Status akun</label><select value={v.aktif} onChange={set('aktif')}><option value={1}>Aktif (bisa login)</option><option value={0}>Nonaktif</option></select>
     </div>)}
     {tab === 'bio' && <div className="ftab">{inputBio('bio')}</div>}
-    {tab === 'bank' && <div className="ftab">{inputBio('bank')}<div className="note" style={{ marginTop: 12 }}>Rekening dipakai HC untuk transfer gaji & reimburse.</div></div>}
+    {tab === 'bank' && <div className="ftab">{inputBio('bank')}<div className="note" style={{ marginTop: 12 }}>Rekening dipakai HC untuk transfer gaji.</div></div>}
     {tab === 'darurat' && <div className="ftab">{inputBio('darurat')}</div>}
     <button className="btn" disabled={kirim} onClick={simpan}>Simpan</button>
     {u && u.id !== me?.id && <button className="btn red" onClick={hapus}>Hapus Karyawan</button>}

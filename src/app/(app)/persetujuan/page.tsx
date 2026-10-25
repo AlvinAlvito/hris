@@ -1,5 +1,6 @@
 'use client';
-/* Satu pintu persetujuan HC: semua yang menunggu tindakan, dikelompokkan per jenis */
+/* Satu pintu persetujuan: semua yang menunggu tindakan, dikelompokkan per jenis.
+   HC / Super Admin melihat seluruh karyawan; Supervisor hanya timnya (disaring di server). */
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAplikasi } from '@/components/Aplikasi';
@@ -11,9 +12,8 @@ import { keExcel } from '@/lib/klien/excel';
 import { jamKerjaTeks, teksStatus, tglPendek, todayStr } from '@/lib/klien/format';
 
 type Data = Record<string, any>;
-const TUJUAN: Record<string, string> = { cuti: '/cuti', rb_hr: '/reimburse', rb_fin: '/reimburse', rb_transfer: '/reimburse', ks_hr: '/kasbon',
-  ks_fin: '/kasbon', payroll: '/payroll', lupa: '/absensi', kontrak: '/karyawan', rekan: '/jadwal' };
-const INLINE = ['pengajuan', 'ket', 'tukar'];
+const TUJUAN: Record<string, string> = { cuti: '/cuti', payroll: '/payroll', lupa: '/absensi', absen: '/absensi', kontrak: '/karyawan' };
+const INLINE = ['pengajuan', 'ket'];
 
 function Status({ st }: { st: string }) {
   const c = st === 'Disetujui' ? 'b-green' : /^Menunggu/.test(st) ? 'b-amber' : st === 'Dibatalkan' ? 'b-gray' : 'b-red';
@@ -25,7 +25,7 @@ export default function Persetujuan() {
   const router = useRouter();
   const [aktif, setAktif] = useState<string | null>(null);
   useEffect(() => { muatInbox(); }, [muatInbox]);
-  const item = inbox.semua.filter((x) => x.kunci !== 'rekan' && x.kunci !== 'rekomendasi');
+  const item = inbox.semua;
   const pilih = aktif ?? item.find((x) => x.jumlah && INLINE.includes(x.kunci))?.kunci ?? 'pengajuan';
   const adaTindakLanjut = item.some((x) => x.jumlah > 0 && !INLINE.includes(x.kunci));
   const klik = (k: string) => (INLINE.includes(k) ? setAktif(k) : router.push(TUJUAN[k] ?? '/dashboard'));
@@ -37,11 +37,10 @@ export default function Persetujuan() {
           <div className="tiny muted">{INLINE.includes(x.kunci) ? 'Lihat daftar' : 'Buka menu terkait'} →</div></button>))}
     </div>
     {adaTindakLanjut && <div className="note" style={{ marginTop: 14 }}>
-      Angka pada kartu termasuk pengingat dan tindak lanjut di menu lain. Klik kartu seperti <b>Kontrak berakhir</b> untuk membuka Karyawan atau <b>Payroll draf</b> untuk membuka Payroll. Daftar pengajuan yang bisa diputus langsung muncul di panel bawah saat kartunya dipilih.
+      Angka pada kartu termasuk pengingat dan tindak lanjut di menu lain. Klik kartu <b>Absensi menunggu approval</b> atau <b>Lupa clock out</b> untuk membuka Rekap Absensi, <b>Pengajuan cuti</b> untuk membuka Cuti. Daftar pengajuan yang bisa diputus langsung muncul di panel bawah saat kartunya dipilih.
     </div>}
     {pilih === 'pengajuan' && <DaftarPengajuan />}
     {pilih === 'ket' && <DaftarIzin />}
-    {pilih === 'tukar' && <DaftarTukar />}
   </>);
 }
 
@@ -86,21 +85,21 @@ function DaftarPengajuan() {
   const { list, halaman, page, setPage, search, setSearch, muat } = useDaftar('adm_pengajuan', filter);
   const putus = useKeputusan('adm_pengajuan_putus', muat);
   const ekspor = () => api<Data[]>('adm_pengajuan', { status: 'ALL', all: true, search }).then((l) => keExcel(l.map((x) => ({ Nama: x.nama, NIK: x.nik, Lokasi: x.cabang, Jenis: x.jenisLabel,
-    Tanggal: x.tanggal, 'Jam Lembur': x.jamMulai ? `${x.jamMulai}–${x.jamSelesai}` : '', Sebelum: x.jadwalSebelum, Sesudah: x.jadwalSesudah, Alasan: x.alasan,
-    Status: teksStatus(x.status), 'Diputus Oleh': x.approver, 'Catatan HC': x.catatanHr })), 'Pengajuan', 'pengajuan-jadwal-lembur-' + todayStr())).catch(galat);
+    Tanggal: x.tanggal, Jam: x.jamMulai ? x.jamMulai + (x.jamSelesai ? `–${x.jamSelesai}` : '') : '', Sebelum: x.jadwalSebelum, Sesudah: x.jadwalSesudah, Alasan: x.alasan,
+    Status: teksStatus(x.status), 'Diputus Oleh': x.approver, 'Catatan Atasan': x.catatanHr })), 'Pengajuan', 'pengajuan-lembur-absen-' + todayStr())).catch(galat);
   return (
-    <div className="card"><Kepala ikon="repeat" judul="Lembur, Ganti Shift & Libur" opsi={['Menunggu HR', 'Disetujui', 'Ditolak HR', 'ALL']} filter={filter} setFilter={setFilter} ekspor={ekspor} />
+    <div className="card"><Kepala ikon="clock" judul="Lembur, Lupa Absen & Izin Terlambat" opsi={['Menunggu HR', 'Disetujui', 'Ditolak HR', 'ALL']} filter={filter} setFilter={setFilter} ekspor={ekspor} />
       <KontrolDaftar search={search} setSearch={setSearch} />
       {!list ? <div className="skel" style={{ height: 90, marginTop: 12 }} /> : list.length ? <>{list.map((x) => (
         <div key={x.id} className="item">
           <div className="top"><div><div className="nm">{x.nama} · {x.jenisLabel}</div>
             <div className="dt">{tglPendek(x.tanggal)} · {x.jenis === 'lembur' ? `${x.jamMulai}–${x.jamSelesai} (${jamKerjaTeks(x.menit)})`
-              : x.jenis === 'ganti_shift' ? <>{x.jadwalSebelum} → <b>{x.jadwalSesudah}</b></> : <>Jadi LIBUR{x.tanggal2 && ', jadwalnya dipindah ke ' + tglPendek(x.tanggal2)}</>}
+              : <>{x.jadwalSebelum && <>{x.jadwalSebelum} → </>}<b>{x.jadwalSesudah || x.jamMulai}</b></>}
               {x.cabang && ' · ' + x.cabang}</div></div><Status st={x.status} /></div>
           <div className="kv"><span>Alasan</span><span style={{ textAlign: 'right' }}>{x.alasan}</span></div>
           <TautanBukti link={x.buktiLink} />
           {x.approver && <div className="kv"><span>Diputus oleh</span><span>{x.approver}</span></div>}
-          {x.catatanHr && <div className="kv"><span>Catatan HC</span><span style={{ textAlign: 'right' }}>{x.catatanHr}</span></div>}
+          {x.catatanHr && <div className="kv"><span>Catatan atasan</span><span style={{ textAlign: 'right' }}>{x.catatanHr}</span></div>}
           {/^Menunggu/.test(x.status) && x.userId !== me?.id && <Tombol id={x.id} putus={putus} />}
         </div>))}<NavigasiHalaman page={page} total={halaman?.total ?? 0} totalPages={halaman?.totalPages ?? 1} ubah={setPage} /></> : <div className="empty">Tidak ada pengajuan pada filter ini.</div>}
     </div>
@@ -114,7 +113,7 @@ function DaftarIzin() {
   const putus = useKeputusan('adm_ket_putus', muat);
   const ekspor = () => api<Data[]>('adm_ketidakhadiran', { status: 'ALL', all: true, search }).then((l) => keExcel(l.map((x) => ({ Nama: x.nama, NIK: x.nik, Lokasi: x.cabang,
     Jenis: x.jenisLabel + (x.sesi ? ` (${x.sesi})` : ''), Tanggal: x.tanggal, Keterangan: x.alasan, Status: teksStatus(x.status), 'Diputus Oleh': x.approver,
-    'Catatan HC': x.catatanHr })), 'Izin', 'izin-wfh-dinas-' + todayStr())).catch(galat);
+    'Catatan Atasan': x.catatanHr })), 'Izin', 'izin-wfh-dinas-' + todayStr())).catch(galat);
   return (
     <div className="card"><Kepala ikon="file-heart" judul="Izin, Sakit, WFH & Dinas" opsi={['Menunggu HR', 'Disetujui', 'Ditolak HR', 'ALL']} filter={filter} setFilter={setFilter} ekspor={ekspor} />
       <KontrolDaftar search={search} setSearch={setSearch} />
@@ -124,38 +123,10 @@ function DaftarIzin() {
             <div className="dt"><b>{x.jenisLabel}{x.sesi && ` (${x.sesi})`}</b> · {tglPendek(x.tanggal)}{x.cabang && ' · ' + x.cabang}</div></div><Status st={x.status} /></div>
           {x.alasan && <div className="kv"><span>Keterangan</span><span style={{ textAlign: 'right' }}>{x.alasan}</span></div>}
           <TautanBukti link={x.buktiLink} />
-          {x.catatanHr && <div className="kv"><span>Catatan HC</span><span style={{ textAlign: 'right' }}>{x.catatanHr}</span></div>}
+          {x.catatanHr && <div className="kv"><span>Catatan atasan</span><span style={{ textAlign: 'right' }}>{x.catatanHr}</span></div>}
           {x.approver && <div className="kv"><span>Diputus</span><span style={{ textAlign: 'right' }}>{x.approver}</span></div>}
           {/^Menunggu/.test(x.status) && x.userId !== me?.id && <Tombol id={x.id} putus={putus} />}
         </div>))}<NavigasiHalaman page={page} total={halaman?.total ?? 0} totalPages={halaman?.totalPages ?? 1} ubah={setPage} /></> : <div className="empty">Tidak ada pengajuan pada filter ini.</div>}
-    </div>
-  );
-}
-
-function DaftarTukar() {
-  const { galat } = useAplikasi();
-  const [filter, setFilter] = useState('Menunggu HR');
-  const { list, halaman, page, setPage, search, setSearch, muat } = useDaftar('adm_tukar', filter);
-  const putus = useKeputusan('adm_tukar_putus', muat);
-  const ekspor = () => api<Data[]>('adm_tukar', { status: 'ALL', all: true, search }).then((l) => keExcel(l.map((x) => ({ Pemohon: x.pemohon, 'Tanggal Pemohon': x.tglPemohon,
-    Rekan: x.rekan, 'Tanggal Rekan': x.tglRekan, Jenis: x.jenis, Alasan: x.alasan, Status: teksStatus(x.status), 'Diputus Oleh': x.approver })), 'Tukar', 'tukar-jadwal-' + todayStr())).catch(galat);
-  return (
-    <div className="card"><Kepala ikon="arrow-left-right" judul="Tukar Shift / Libur" opsi={['Menunggu HR', 'Menunggu Rekan', 'Disetujui', 'Ditolak HR', 'Ditolak Rekan', 'ALL']} filter={filter} setFilter={setFilter} ekspor={ekspor} />
-      <KontrolDaftar search={search} setSearch={setSearch} />
-      {!list ? <div className="skel" style={{ height: 90, marginTop: 12 }} /> : list.length ? <>{list.map((x) => (
-        <div key={x.id} className="item">
-          <div className="top"><div><div className="nm">{x.pemohon} ↔ {x.rekan}</div><div className="dt">{x.jenis === 'libur' ? 'Tukar libur' : 'Tukar shift'}{x.cabang && ' · ' + x.cabang}</div></div>
-            <Status st={x.status} /></div>
-          <div className="sep" style={{ margin: '8px 0' }} />
-          <div className="kv"><span>{x.pemohon}</span><span>{tglPendek(x.tglPemohon)} · <b>{x.shiftPemohonSebelum}</b>{x.status === 'Disetujui' && <> → <b style={{ color: 'var(--success)' }}>{x.shiftPemohonSesudah}</b></>}</span></div>
-          <div className="kv"><span>{x.rekan}</span><span>{tglPendek(x.tglRekan)} · <b>{x.shiftRekanSebelum}</b>{x.status === 'Disetujui' && <> → <b style={{ color: 'var(--success)' }}>{x.shiftRekanSesudah}</b></>}</span></div>
-          <div className="kv"><span>Alasan</span><span style={{ textAlign: 'right' }}>{x.alasan}</span></div>
-          <TautanBukti link={x.buktiLink} />
-          {x.catatanRekan && <div className="kv"><span>Catatan rekan</span><span style={{ textAlign: 'right' }}>{x.catatanRekan}</span></div>}
-          {x.approver && <div className="kv"><span>Diputus oleh</span><span>{x.approver}</span></div>}
-          {x.status === 'Menunggu HR' ? <Tombol id={x.id} putus={putus} ya="Setujui & Tukar" />
-            : x.status === 'Menunggu Rekan' ? <div className="warn" style={{ marginTop: 9 }}>Menunggu persetujuan {x.rekan} lebih dulu.</div> : null}
-        </div>))}<NavigasiHalaman page={page} total={halaman?.total ?? 0} totalPages={halaman?.totalPages ?? 1} ubah={setPage} /></> : <div className="empty">Tidak ada permintaan pada filter ini.</div>}
     </div>
   );
 }

@@ -38,9 +38,10 @@ function barisImport(r: Baris, cabangNama: Map<string, number>): [Baris, string[
   if (lok) { const id = cabangNama.get(lok.toLowerCase()); if (id) data.cabang_id = id; else salah.push(`Lokasi Kerja "${lok}" tidak ada di menu Lokasi Kerja`); }
   const peran = String(r.peran ?? '').trim().toLowerCase();
   if (peran) {
-    if (peran === 'pegawai' || peran === 'karyawan') data.role = 'karyawan';
+    if (['pegawai', 'karyawan', 'staff', 'staf'].includes(peran)) data.role = 'karyawan';
+    else if (peran === 'supervisor' || peran === 'spv') data.role = 'atasan';
     else if (peran === 'hc') data.role = 'admin';
-    else salah.push('Peran harus Pegawai atau HC');
+    else salah.push('Peran harus Staff, Supervisor, atau HC');
   }
   for (const [k, [kol, aturan]] of Object.entries(KOLOM_BIODATA)) {
     const v = String(r[k] ?? '').trim();
@@ -100,7 +101,15 @@ export const aksiKaryawan: KumpulanAksi = {
       }
     };
     if (simpan) {
-      await transaksi(proses);
+      await transaksi(async () => {
+        await proses();
+        // kaitkan teks divisi & jabatan hasil impor ke master Struktur Organisasi bila namanya cocok
+        // hanya baris yang tautannya kosong atau tidak lagi sesuai teksnya
+        await exec(`UPDATE users u LEFT JOIN unit_organisasi cur ON cur.id=u.unit_id JOIN unit_organisasi o ON o.nama=TRIM(u.dept)
+          SET u.unit_id=o.id WHERE cur.id IS NULL OR cur.nama<>TRIM(u.dept)`);
+        await exec(`UPDATE users u LEFT JOIN jabatan cur ON cur.id=u.jabatan_id JOIN jabatan j ON j.nama=TRIM(u.jabatan) AND (j.unit_id <=> u.unit_id OR j.unit_id IS NULL)
+          SET u.jabatan_id=j.id WHERE cur.id IS NULL OR cur.nama<>TRIM(u.jabatan)`);
+      });
       await logAksi(u.id, 'impor_karyawan', hasil.filter((x) => x.aksi !== 'gagal').length + ' baris');
     } else await proses();
     return { hasil };

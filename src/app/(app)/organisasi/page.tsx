@@ -1,7 +1,8 @@
 'use client';
-/* Struktur organisasi: bagan kartu bertingkat agar tetap terbaca untuk organisasi besar. */
-import { useEffect, useMemo, useState } from 'react';
-import { useAplikasi } from '@/components/Aplikasi';
+/* Struktur organisasi: bagan kartu bertingkat (semua pengguna) dan master unit organisasi & jabatan (HC / Super Admin). */
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { isAdminUp, useAplikasi } from '@/components/Aplikasi';
+import { DaftarJabatan, DaftarUnit, type DataOrganisasi } from '@/components/MasterOrganisasi';
 import { Avatar } from '@/components/Avatar';
 import { Ikon } from '@/components/Ikon';
 import { api } from '@/lib/klien/api';
@@ -10,6 +11,25 @@ type Baris = { id: number; nama: string; jabatan: string; dept: string; foto: st
 type Simpul = { id?: number; nama: string; jabatan: string; dept?: string; foto?: string; children: Simpul[] };
 
 export default function Organisasi() {
+  const { me, galat } = useAplikasi();
+  const admin = isAdminUp(me);
+  const [tab, setTab] = useState<'bagan' | 'unit' | 'jabatan'>('bagan');
+  const [master, setMaster] = useState<DataOrganisasi | null>(null);
+  const muatMaster = useCallback(() => { api<DataOrganisasi>('org_data', {}, true).then(setMaster).catch(galat); }, [galat]);
+  useEffect(() => { if (admin && tab !== 'bagan') muatMaster(); }, [admin, tab, muatMaster]);
+  return (<>
+    {admin && <div className="seg org-tab" role="tablist">
+      {([['bagan', 'network', 'Bagan Organisasi'], ['unit', 'git-branch', 'Unit Organisasi'], ['jabatan', 'briefcase', 'Jabatan']] as const).map(([k, ic, t]) =>
+        <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}><Ikon n={ic} />{t}</button>)}
+    </div>}
+    {tab === 'bagan' && <BaganOrganisasi />}
+    {tab !== 'bagan' && !master && <div className="card"><div className="skel" style={{ height: 220 }} /></div>}
+    {tab === 'unit' && master && <DaftarUnit data={master} muat={muatMaster} />}
+    {tab === 'jabatan' && master && <DaftarJabatan data={master} muat={muatMaster} />}
+  </>);
+}
+
+function BaganOrganisasi() {
   const { settings, galat } = useAplikasi();
   const [rows, setRows] = useState<Baris[] | null>(null);
   const [cari, setCari] = useState('');

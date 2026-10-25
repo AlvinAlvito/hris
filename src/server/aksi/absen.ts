@@ -1,11 +1,12 @@
 import { exec, nilai, q, q1 } from '@/lib/db';
 import { f, gagal, i, s } from '@/lib/http';
 import {
-  absensiBerjalan, batasJamTerbuka, cabangById, isAdminUp, izinKerja, jadwalHari, jamTeks, jarakMeter, labelKet,
+  absensiBerjalan, batasJamTerbuka, cabangById, isAdminUp, izinKerja, jadwalHari, jamKerjaHari, jamTeks, jarakMeter, labelKet,
   logAksi, need, shiftPublik, tandaiLupaOut, targetMenit,
 } from '@/lib/aturan';
 import { setg, setgInt } from '@/lib/pengaturan';
 import { absRow, userPublik } from '@/lib/format';
+import { jadwalAbsen } from '@/lib/absensiHitung';
 import { simpanFoto } from '@/lib/berkas';
 import { konteks } from '@/lib/konteks';
 import { detikSekarang, epoch, jamWIB, tglWIB } from '@/lib/waktu';
@@ -26,7 +27,7 @@ export const aksiAbsen: KumpulanAksi = {
     const lupa = (await q(`SELECT tanggal, in_time FROM absensi WHERE user_id=? AND in_time IS NOT NULL
       AND out_time IS NULL AND lupa_out=1 ORDER BY tanggal DESC LIMIT 5`, [u.id]))
       .map((x) => ({ tanggal: x.tanggal, inTime: String(x.in_time).slice(0, 5) }));
-    const r = await q1(`SELECT COUNT(*) hadir, COALESCE(SUM(terlambat),0) telat, COALESCE(SUM(kurang_menit),0) k,
+    const r = await q1(`SELECT COUNT(*) hadir, COALESCE(SUM(terlambat),0) telat, COALESCE(SUM(menit_telat),0) mtelat, COALESCE(SUM(kurang_menit),0) k,
       COALESCE(SUM(lembur_menit),0) l FROM absensi WHERE user_id=? AND YEAR(tanggal)=YEAR(CURDATE()) AND MONTH(tanggal)=MONTH(CURDATE())`, [u.id]);
     const jd = await jadwalHari(u, tglNow);
     const ket = await q1(`SELECT jenis, status FROM ketidakhadiran WHERE user_id=? AND tanggal=?
@@ -39,12 +40,13 @@ export const aksiAbsen: KumpulanAksi = {
       sesiTerbukaLama: sesiTerbuka && sesiTerbuka.tanggal !== tglNow ? absRow(sesiTerbuka) : null,
       lupaOut: lupa,
       ketHariIni: ket ? { jenis: ket.jenis, jenisLabel: labelKet(ket.jenis), status: ket.status } : null,
-      hadir: Number(r?.hadir ?? 0), telat: Number(r?.telat ?? 0),
+      hadir: Number(r?.hadir ?? 0), telat: Number(r?.telat ?? 0), menitTelatBulan: Number(r?.mtelat ?? 0),
       kurangBulan: Number(r?.k ?? 0), lemburBulan: Number(r?.l ?? 0),
       jadwal: {
         jamMode: u.jam_mode, libur: jd.libur, liburMingguan: jd.sumber === 'mingguan', sumber: jd.sumber, ket: jd.ket ?? '',
         shift: jd.shift ? shiftPublik(jd.shift) : null,
-        target: await targetMenit(u, jd.shift),
+        target: await targetMenit(u, jd.shift, tglNow),
+        jamKerja: await jamKerjaHari(tglNow),
         intiMulai: u.inti_mulai ? String(u.inti_mulai).slice(0, 5) : '',
         intiSelesai: u.inti_selesai ? String(u.inti_selesai).slice(0, 5) : '',
       },
@@ -109,37 +111,29 @@ export const aksiAbsen: KumpulanAksi = {
 
     if (mode === 'in') {
       if (row && row.in_time) gagal('Anda sudah clock in hari ini');
-      const jd = await jadwalHari(u, tgl), sh = jd.shift;
-      let telat = 0, menitTelat = 0, jadwalIn: string | null = null, jadwalOut: string | null = null, shiftNama = '';
+      const j = await jadwalAbsen(u, tgl), jd = j.jd, sh = j.sh, jadwalIn = j.jadwalIn, jadwalOut = j.jadwalOut, shiftNama = j.nama;
+      let telat = 0, menitTelat = 0;
       const kini = detikSekarang();
-      if (jm === 'shift') {
-        if (jd.libur) shiftNama = 'Di luar jadwal (dijadwalkan libur)';
-        else if (sh) {
-          shiftNama = sh.nama; jadwalIn = sh.jam_masuk; jadwalOut = sh.jam_pulang;
-          if (kini > epoch(tgl, sh.jam_masuk) + sh.toleransi * 60) { telat = 1; menitTelat = Math.floor((kini - epoch(tgl, sh.jam_masuk)) / 60); }
-        } else shiftNama = 'Belum dijadwalkan';
-      } else if (jm === 'fleksibel') {
-        shiftNama = jd.libur ? 'Masuk saat libur' : 'Fleksibel';    // jam masuk bebas, tidak pernah telat
-      } else if (jd.libur) {
-        shiftNama = 'Masuk saat libur';
-      } else {
-        const jamMasuk = await setg('jam_masuk', '08:00'), tol = await setgInt('toleransi', 10);
-        jadwalIn = jamMasuk + ':00'; jadwalOut = (await setg('jam_pulang', '17:00')) + ':00';
-        if (kini > epoch(tgl, jamMasuk) + tol * 60) { telat = 1; menitTelat = Math.floor((kini - epoch(tgl, jamMasuk)) / 60); }
+      if (jadwalIn) {
+        const tol = jm === 'shift' && sh ? sh.toleransi : await setgInt('toleransi', 10);
+        if (kini > epoch(tgl, jadwalIn) + tol * 60) { telat = 1; menitTelat = Math.floor((kini - epoch(tgl, jadwalIn)) / 60); }
       }
-      let target = await targetMenit(u, sh);
+      // izin terlambat yang sudah disetujui untuk hari ini
+      const izinTelat = telat ? Number(await nilai("SELECT COUNT(*) FROM pengajuan WHERE user_id=? AND tanggal=? AND jenis='izin_telat' AND status='Disetujui'", [u.id, tgl])) > 0 : false;
+      let target = j.target;
       // izin setengah hari: target separuh; sesi pagi berarti masuk siang, jadi tidak dihitung telat
       if (izinSesi !== '') { target = Math.floor(target / 2); if (izinSesi === 'pagi') { telat = 0; menitTelat = 0; } }
 
       const file = foto !== '' ? await simpanFoto(foto, u.id, 'in') : '';
       await exec(`INSERT INTO absensi (user_id,tanggal,mode,kerja_dari,izin_sesi,in_time,in_photo,in_lat,in_lng,in_jarak,in_luar,
-        base_label,cabang_id,cabang_nama,jam_mode,shift_id,shift_nama,jadwal_in,jadwal_out,target_menit,terlambat,menit_telat,ip,ua)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        base_label,cabang_id,cabang_nama,jam_mode,shift_id,shift_nama,jadwal_in,jadwal_out,target_menit,terlambat,menit_telat,telat_diizinkan,ip,ua)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [u.id, tgl, lm, kerjaDari, izinSesi, jam, file, lat, lng, jarak, luar, lm === 'lapangan' ? u.base_label : '',
-          cabAbs?.id ?? null, cabAbs?.nama ?? '', jm, sh?.id ?? null, shiftNama, jadwalIn, jadwalOut, target, telat, menitTelat,
+          cabAbs?.id ?? null, cabAbs?.nama ?? '', jm, sh?.id ?? null, shiftNama, jadwalIn, jadwalOut, target, telat, menitTelat, izinTelat ? 1 : 0,
           (k?.ip ?? '').slice(0, 45), (k?.ua ?? '').slice(0, 255)]);
       await logAksi(u.id, 'clock_in', jam + (shiftNama ? ' · ' + shiftNama : '') + (kerjaDari ? ' · ' + labelKet(kerjaDari) : ''));
-      if (telat) pesan = `Clock in tersimpan — terlambat ${menitTelat} menit`;
+      if (telat && izinTelat) pesan = `Clock in tersimpan — terlambat ${menitTelat} menit (sudah ada izin terlambat)`;
+      else if (telat) pesan = `Clock in tersimpan — terlambat ${menitTelat} menit`;
       else if (jm === 'fleksibel') pesan = `Clock in berhasil. Target kerja hari ini ${jamTeks(target)}.`;
       else if (jd.libur) pesan = 'Clock in tersimpan. Catatan: hari ini Anda dijadwalkan libur.';
       else pesan = 'Clock in berhasil. Selamat bekerja!';
@@ -193,7 +187,14 @@ export const aksiAbsen: KumpulanAksi = {
     if (h.cari) params.push(polaCari(h.cari), polaCari(h.cari), polaCari(h.cari), polaCari(h.cari));
     const total = Number(await nilai(`SELECT COUNT(*) FROM absensi WHERE user_id=? AND YEAR(tanggal)=? AND MONTH(tanggal)=?${filter}`, params));
     const rows = await q(`SELECT * FROM absensi WHERE user_id=? AND YEAR(tanggal)=? AND MONTH(tanggal)=?${filter} ORDER BY tanggal DESC LIMIT ? OFFSET ?`, [...params, h.limit, h.offset]);
-    return hasilHalaman(rows.map(absRow), total, h.page);
+    // ringkasan sebulan penuh (tidak ikut halaman / pencarian)
+    const r = await q1(`SELECT COUNT(*) hadir, COALESCE(SUM(terlambat=1 AND telat_diizinkan=0),0) telat, COALESCE(SUM(IF(terlambat=1,menit_telat,0)),0) mtelat,
+      COALESCE(SUM(approval='menunggu'),0) menunggu, COALESCE(SUM(approval='ditolak'),0) ditolak,
+      COALESCE(SUM(out_time IS NOT NULL AND izin_sesi='' AND target_menit>0 AND menit_kerja*2<target_menit),0) setengah
+      FROM absensi WHERE user_id=? AND YEAR(tanggal)=? AND MONTH(tanggal)=? AND in_time IS NOT NULL`, [u.id, th, bl]);
+    const ringkas = { hadir: Number(r?.hadir ?? 0), telat: Number(r?.telat ?? 0), menitTelat: Number(r?.mtelat ?? 0),
+      menunggu: Number(r?.menunggu ?? 0), ditolak: Number(r?.ditolak ?? 0), setengah: Number(r?.setengah ?? 0) };
+    return { ...hasilHalaman(rows.map(absRow), total, h.page), ringkas };
   },
 
   /* titik awal karyawan lapangan */

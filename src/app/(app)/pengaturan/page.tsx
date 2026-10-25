@@ -1,5 +1,5 @@
 'use client';
-/* Pengaturan organisasi: identitas & logo, jam kerja, kebijakan absen, reimburse & kasbon, titik kantor, log aktivitas */
+/* Pengaturan organisasi: identitas & logo, jam kerja per hari, kebijakan absen, titik kantor, log aktivitas */
 import { useEffect, useState, type ReactNode } from 'react';
 import { isDir, useAplikasi } from '@/components/Aplikasi';
 import { Ikon } from '@/components/Ikon';
@@ -18,7 +18,7 @@ export default function Pengaturan() {
   const { me } = useAplikasi();
   return (<>
     <Identitas />
-    <div className="grid-2"><div><JamKerja /></div><div><Keuangan /><LokasiKantor /></div></div>
+    <div className="grid-2"><div><JamKerja /></div><div><KebijakanAbsen /><LokasiKantor /></div></div>
     {isDir(me) && <LogAktivitas />}
   </>);
 }
@@ -64,48 +64,70 @@ function Identitas() {
   );
 }
 
+const HARI_KERJA = ['', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+const JADWAL_BAWAAN: Data = { 1: ['08:30', '17:00'], 2: ['08:30', '17:00'], 3: ['08:30', '17:00'], 4: ['08:30', '17:00'], 5: ['08:00', '17:00'], 6: ['08:00', '12:00'], 7: null };
+const durasi = (a: string, b: string) => { const [h1, m1] = a.split(':').map(Number), [h2, m2] = b.split(':').map(Number); return h2 * 60 + m2 - (h1 * 60 + m1); };
+
+/* Jam kerja per hari: staf jam tetap mengikuti jadwal ini (telat, target jam, hari libur mingguan, hitungan cuti) */
 function JamKerja() {
   const { settings: s } = useAplikasi();
   const simpan = useSimpan();
-  const [v, setV] = useState<Data>({ jam_masuk: s.jamMasuk, jam_pulang: s.jamPulang, toleransi: s.toleransi, hari_kerja_seminggu: s.hariKerjaSeminggu,
-    jatah_default: s.jatahDefault, min_jarak_default: s.minJarakDefault, wajib_foto: s.wajibFoto, libur_minggu_nonshift: s.liburMingguNonshift,
-    libur_nasional_aktif: s.liburNasionalAktif, titik_awal_oleh_admin: s.titikAwalOlehAdmin });
-  const set = (k: string) => (e: { target: { value: string } }) => setV((x) => ({ ...x, [k]: e.target.value }));
-  const sak = (k: string) => (b: boolean) => setV((x) => ({ ...x, [k]: b }));
+  const [jk, setJk] = useState<Data>(() => ({ ...JADWAL_BAWAAN, ...(s.jadwalKerja ?? {}) }));
+  const [tol, setTol] = useState(s.toleransi);
+  // jam terakhir yang dipakai sebelum hari itu dijadikan libur, agar saat diaktifkan lagi tidak kembali kosong
+  const [ingat, setIngat] = useState<Data>({});
+  const ubah = (d: number, i: 0 | 1, v: string) => setJk((x) => ({ ...x, [d]: i === 0 ? [v, x[d][1]] : [x[d][0], v] }));
+  const saklar = (d: number) => setJk((x) => {
+    if (x[d]) { setIngat((g) => ({ ...g, [d]: x[d] })); return { ...x, [d]: null }; }
+    return { ...x, [d]: ingat[d] ?? JADWAL_BAWAAN[d] ?? ['08:00', '17:00'] };
+  });
+  const totalMinggu = [1, 2, 3, 4, 5, 6, 7].reduce((n, d) => n + (jk[d] ? Math.max(0, durasi(jk[d][0], jk[d][1])) : 0), 0);
+  const salah = [1, 2, 3, 4, 5, 6, 7].some((d) => jk[d] && durasi(jk[d][0], jk[d][1]) <= 0);
   return (
-    <div className="card"><h3><Ikon n="clock" />Jam & Hari Kerja</h3>
-      <div className="row"><div><label>Jam masuk</label><input type="time" value={v.jam_masuk} onChange={set('jam_masuk')} /></div>
-        <div><label>Jam pulang</label><input type="time" value={v.jam_pulang} onChange={set('jam_pulang')} /></div></div>
-      <label>Toleransi keterlambatan (menit)</label><input type="number" min={0} max={120} value={v.toleransi} onChange={set('toleransi')} />
-      <label>Pola hari kerja</label><select value={v.hari_kerja_seminggu} onChange={set('hari_kerja_seminggu')}>
-        <option value={5}>5 hari (Senin–Jumat) — Sabtu & Minggu libur</option><option value={6}>6 hari (Senin–Sabtu) — Minggu libur</option></select>
-      <div className="tiny muted" style={{ marginTop: 4 }}>Menentukan libur akhir pekan staf non-shift, hitungan hari cuti, dan rumus lembur hari libur (PP 35/2021).</div>
-      <label>Jatah cuti default (hari/tahun)</label><input type="number" min={0} max={60} value={v.jatah_default} onChange={set('jatah_default')} />
-      <label>Jarak minimum default mode lapangan (km)</label><input type="number" step="0.1" value={v.min_jarak_default} onChange={set('min_jarak_default')} />
-      <Saklar on={!!v.wajib_foto} set={sak('wajib_foto')} judul="Wajib foto saat absen" ket="Foto hanya dari kamera langsung" />
-      <Saklar on={!!v.libur_minggu_nonshift} set={sak('libur_minggu_nonshift')} judul="Libur akhir pekan otomatis" ket="Staf non-shift tidak wajib absen di akhir pekan" />
-      <Saklar on={!!v.libur_nasional_aktif} set={sak('libur_nasional_aktif')} judul="Libur nasional & cuti bersama" ket="Hari di Kalender Libur tidak dihitung hari kerja staf non-shift" />
-      <Saklar on={!!v.titik_awal_oleh_admin} set={sak('titik_awal_oleh_admin')} judul="Titik awal hanya diatur HC" ket="Pegawai lapangan tidak bisa mengubah titik awalnya sendiri" />
-      <button className="btn" onClick={() => simpan({ ...v, toleransi: +v.toleransi || 0, hari_kerja_seminggu: +v.hari_kerja_seminggu, jatah_default: +v.jatah_default || 12,
-        min_jarak_default: +v.min_jarak_default || 2.5 }, 'Pengaturan tersimpan')}>Simpan Pengaturan</button>
+    <div className="card"><h3><Ikon n="clock" />Jam Kerja per Hari</h3>
+      <div className="tiny muted" style={{ marginBottom: 8 }}>Berlaku untuk karyawan berpola jam <b>Tetap</b>. Hari yang dimatikan menjadi libur mingguan: tidak wajib absen dan tidak dihitung hari cuti.</div>
+      <div className="jk-tabel">
+        {[1, 2, 3, 4, 5, 6, 7].map((d) => {
+          const j = jk[d], menit = j ? durasi(j[0], j[1]) : 0;
+          return (
+            <div key={d} className={'jk-baris' + (j ? '' : ' libur')}>
+              <div className="jk-hari"><div className={'sw' + (j ? ' on' : '')} role="switch" aria-checked={!!j} tabIndex={0} aria-label={'Hari kerja ' + HARI_KERJA[d]}
+                onClick={() => saklar(d)} onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); saklar(d); } }} /><b>{HARI_KERJA[d]}</b></div>
+              {j ? (<>
+                <input type="time" value={j[0]} onChange={(e) => ubah(d, 0, e.target.value)} aria-label={'Jam masuk ' + HARI_KERJA[d]} />
+                <span className="muted">–</span>
+                <input type="time" value={j[1]} onChange={(e) => ubah(d, 1, e.target.value)} aria-label={'Jam pulang ' + HARI_KERJA[d]} />
+                <span className={'badge ' + (menit > 0 ? 'b-gray' : 'b-red')}>{menit > 0 ? `${Math.floor(menit / 60)}j${menit % 60 ? ` ${menit % 60}m` : ''}` : 'jam salah'}</span>
+              </>) : <span className="badge b-gray jk-libur">Libur</span>}
+            </div>);
+        })}
+      </div>
+      <div className="note" style={{ marginTop: 10 }}>Total <b>{Math.floor(totalMinggu / 60)} jam{totalMinggu % 60 ? ` ${totalMinggu % 60} menit` : ''}</b> per minggu · {[1, 2, 3, 4, 5, 6, 7].filter((d) => jk[d]).length} hari kerja</div>
+      <label>Toleransi keterlambatan (menit)</label><input type="number" min={0} max={120} value={tol} onChange={(e) => setTol(+e.target.value)} />
+      <div className="tiny muted" style={{ marginTop: 4 }}>Masuk lewat dari jam masuk + toleransi dicatat terlambat; menit terlambat dihitung dari jam masuk.</div>
+      <div className="row" style={{ marginTop: 12 }}>
+        <button className="btn ghost" onClick={() => setJk({ ...JADWAL_BAWAAN })}><Ikon n="undo-2" />Jam kerja perusahaan</button>
+        <button className="btn" disabled={salah} onClick={() => simpan({ jadwal_kerja: jk, toleransi: tol || 0 }, 'Jam kerja tersimpan')}><Ikon n="check" />Simpan Jam Kerja</button>
+      </div>
     </div>
   );
 }
 
-function Keuangan() {
+function KebijakanAbsen() {
   const { settings: s } = useAplikasi();
   const simpan = useSimpan();
-  const [kat, setKat] = useState((s.reimburseKategori || []).join('|')), [hari, setHari] = useState(s.reimburseMaksHari);
-  const [kali, setKali] = useState(s.kasbonMaksKaliGaji), [tenor, setTenor] = useState(s.kasbonTenorMaks), [satu, setSatu] = useState(!!s.kasbonSatuAktif);
+  const [v, setV] = useState<Data>({ jatah_default: s.jatahDefault, min_jarak_default: s.minJarakDefault, wajib_foto: s.wajibFoto,
+    libur_nasional_aktif: s.liburNasionalAktif, titik_awal_oleh_admin: s.titikAwalOlehAdmin });
+  const set = (k: string) => (e: { target: { value: string } }) => setV((x) => ({ ...x, [k]: e.target.value }));
+  const sak = (k: string) => (b: boolean) => setV((x) => ({ ...x, [k]: b }));
   return (
-    <div className="card"><h3><Ikon n="receipt" />Reimburse & Kasbon</h3>
-      <label style={{ marginTop: 0 }}>Kategori reimburse <span className="tiny">(pisahkan dengan tanda |)</span></label><input value={kat} onChange={(e) => setKat(e.target.value)} />
-      <div className="row"><div><label>Batas klaim (hari)</label><input type="number" min={1} max={365} value={hari} onChange={(e) => setHari(+e.target.value)} /></div>
-        <div><label>Maks. kasbon (× gaji)</label><input type="number" step="0.5" min={0} max={12} value={kali} onChange={(e) => setKali(+e.target.value)} /></div></div>
-      <label>Tenor cicilan kasbon maksimal (bulan)</label><input type="number" min={1} max={60} value={tenor} onChange={(e) => setTenor(+e.target.value)} />
-      <Saklar on={satu} set={setSatu} judul="Satu kasbon aktif per pegawai" ket="Pegawai harus melunasi dulu sebelum mengajukan lagi" />
-      <button className="btn" onClick={() => simpan({ reimburse_kategori: kat.split('|').map((x: string) => x.trim()).filter(Boolean).join('|') || 'Lainnya',
-        reimburse_maks_hari: hari || 60, kasbon_maks_kali_gaji: kali || 0, kasbon_tenor_maks: tenor || 12, kasbon_satu_aktif: satu }, 'Pengaturan reimburse & kasbon tersimpan')}>Simpan</button>
+    <div className="card"><h3><Ikon n="sliders-horizontal" />Kebijakan Absen & Cuti</h3>
+      <label style={{ marginTop: 0 }}>Jatah cuti default (hari/tahun)</label><input type="number" min={0} max={60} value={v.jatah_default} onChange={set('jatah_default')} />
+      <label>Jarak minimum default mode lapangan (km)</label><input type="number" step="0.1" value={v.min_jarak_default} onChange={set('min_jarak_default')} />
+      <Saklar on={!!v.wajib_foto} set={sak('wajib_foto')} judul="Wajib foto saat absen" ket="Foto hanya dari kamera langsung" />
+      <Saklar on={!!v.libur_nasional_aktif} set={sak('libur_nasional_aktif')} judul="Libur nasional & cuti bersama" ket="Hari di Kalender Libur tidak dihitung hari kerja" />
+      <Saklar on={!!v.titik_awal_oleh_admin} set={sak('titik_awal_oleh_admin')} judul="Titik awal hanya diatur HC" ket="Pegawai lapangan tidak bisa mengubah titik awalnya sendiri" />
+      <button className="btn" onClick={() => simpan({ ...v, jatah_default: +v.jatah_default || 12, min_jarak_default: +v.min_jarak_default || 2.5 }, 'Pengaturan tersimpan')}>Simpan</button>
     </div>
   );
 }

@@ -29,6 +29,8 @@ export function useAplikasi() {
 }
 export const isAdminUp = (m?: Me | null) => !!m && (m.role === 'admin' || m.role === 'direktur');
 export const isDir = (m?: Me | null) => !!m && m.role === 'direktur';
+/* HC, Super Admin, atau Supervisor (memutus absensi & pengajuan timnya) */
+export const isPenyetuju = (m?: Me | null) => isAdminUp(m) || (!!m && m.role === 'atasan');
 
 interface Toast { id: number; pesan: string; buruk: boolean; keluar: boolean }
 interface Dialog { jenis: 'yakin' | 'tanya'; judul: string; ket?: string; label?: string; nilai?: string; panjang?: boolean; wajib?: boolean; ya?: string; ikon?: string; selesai: (v: any) => void }

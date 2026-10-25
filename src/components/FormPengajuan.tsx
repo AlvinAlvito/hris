@@ -1,5 +1,5 @@
 'use client';
-/* Formulir pengajuan pegawai: cuti, izin/sakit, setengah hari, WFH, dinas luar kota, lembur */
+/* Formulir pengajuan pegawai: cuti, izin/sakit, setengah hari, WFH, dinas luar kota, lembur, lupa clock in / out, izin terlambat */
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/klien/api';
 import { pad, todayStr } from '@/lib/klien/format';
@@ -65,7 +65,7 @@ export function FormIzin({ jenis, selesai }: { jenis: 'izin' | 'setengah_hari' |
       <textarea value={alasan} onChange={(e) => setAlasan(e.target.value)}
         placeholder={jenis === 'dlk' ? 'mis. Medan — persiapan OSN tingkat provinsi' : jenis === 'wfh' ? 'mis. menyelesaikan laporan' : 'mis. demam, kontrol ke dokter'} />
       <InputBuktiPengajuan link={buktiLink} setLink={setBuktiLink} file={buktiFile} setFile={setBuktiFile} />
-      <button className="btn" disabled={kirim} onClick={ajukan}><Ikon n="send" />Kirim ke HC</button>
+      <button className="btn" disabled={kirim} onClick={ajukan}><Ikon n="send" />Kirim ke Atasan</button>
       <button className="btn ghost" onClick={tutupSheet}>Batal</button>
     </>
   );
@@ -95,14 +95,15 @@ export function FormCuti({ selesai }: { selesai: Selesai }) {
 
   const hari = useMemo(() => {
     if (!mulai || !akhir || akhir < mulai) return 0;
-    const hk = +settings.hariKerjaSeminggu || 5, kal = jenis === 'Cuti Melahirkan';
+    const jk: Record<string, unknown> = settings.jadwalKerja ?? {}, kal = jenis === 'Cuti Melahirkan';
     let n = 0;
     for (const d = new Date(mulai + 'T00:00:00'), b = new Date(akhir + 'T00:00:00'); d <= b; d.setDate(d.getDate() + 1)) {
       const key = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-      if (kal || ((d.getDay() || 7) <= hk && !libur[key])) n++;
+      if (kal || (jk[d.getDay() || 7] && !libur[key])) n++;
     }
     return n;
-  }, [mulai, akhir, jenis, libur, settings.hariKerjaSeminggu]);
+  }, [mulai, akhir, jenis, libur, settings.jadwalKerja]);
+  const hariLibur = ['', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'].filter((_, d) => d > 0 && !(settings.jadwalKerja ?? {})[d]).join(' & ') || 'tanpa hari libur mingguan';
   const sisa = (me?.sisa ?? 0) - pending;
 
   const ajukan = async () => {
@@ -122,7 +123,7 @@ export function FormCuti({ selesai }: { selesai: Selesai }) {
         <div><label>Tanggal selesai</label><input type="date" value={akhir} min={mulai} onChange={(e) => setAkhir(e.target.value)} /></div>
       </div>
       <div className="note" style={{ marginTop: 10 }}>
-        <b>{hari} hari</b> {jenis === 'Cuti Melahirkan' ? '(hari kalender)' : `(hari kerja; ${(+settings.hariKerjaSeminggu || 5) === 6 ? 'Minggu' : 'Sabtu–Minggu'}${settings.liburNasionalAktif ? ' & tanggal merah' : ''} tidak dihitung)`}
+        <b>{hari} hari</b> {jenis === 'Cuti Melahirkan' ? '(hari kalender)' : `(hari kerja; ${hariLibur}${settings.liburNasionalAktif ? ' & tanggal merah' : ''} tidak dihitung)`}
         {jenis === 'Cuti Tahunan'
           ? <><br />Memotong saldo cuti tahunan. Sisa tersedia: <b>{sisa} hari</b>{hari > sisa && <><br /><span style={{ color: 'var(--danger)' }}>Melebihi sisa cuti</span></>}</>
           : <><br />Tidak memotong saldo cuti tahunan.</>}
@@ -165,7 +166,45 @@ export function FormLembur({ selesai }: { selesai: Selesai }) {
       <label>Alasan</label>
       <textarea value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="mis. input nilai OSN" />
       <InputBuktiPengajuan link={buktiLink} setLink={setBuktiLink} file={buktiFile} setFile={setBuktiFile} />
-      <button className="btn" disabled={kirim} onClick={ajukan}><Ikon n="send" />Kirim ke HC</button>
+      <button className="btn" disabled={kirim} onClick={ajukan}><Ikon n="send" />Kirim ke Atasan</button>
+      <button className="btn ghost" onClick={tutupSheet}>Batal</button>
+    </>
+  );
+}
+
+/* ---------- lupa clock in / lupa clock out / izin terlambat ---------- */
+const KOREKSI: Record<string, { judul: string; label: string; ket: string; contoh: string }> = {
+  lupa_in: { judul: 'Lupa Clock In', label: 'Jam masuk sebenarnya', ket: 'Setelah disetujui atasan, jam masuk ini tercatat di absensi Anda (keterlambatan dihitung dari jam ini).', contoh: 'mis. sudah tiba 08:20 tapi lupa menekan Clock In' },
+  lupa_out: { judul: 'Lupa Clock Out', label: 'Jam pulang sebenarnya', ket: 'Setelah disetujui atasan, jam pulang ini tercatat dan total jam kerja dihitung ulang.', contoh: 'mis. pulang 17:05, lupa menekan Clock Out' },
+  izin_telat: { judul: 'Izin Terlambat', label: 'Perkiraan jam tiba', ket: 'Bila disetujui, keterlambatan pada tanggal itu tidak dihitung pelanggaran (menit terlambat tetap tercatat).', contoh: 'mis. mengantar anak ke rumah sakit pagi hari' },
+};
+export function FormKoreksiAbsen({ jenis, selesai }: { jenis: 'lupa_in' | 'lupa_out' | 'izin_telat'; selesai: Selesai }) {
+  const { tutupSheet, toast, galat } = useAplikasi();
+  const k = KOREKSI[jenis];
+  const [tgl, setTgl] = useState(todayStr());
+  const [jam, setJam] = useState(jenis === 'lupa_out' ? '17:00' : jenis === 'lupa_in' ? '08:30' : '09:30');
+  const [alasan, setAlasan] = useState('');
+  const [buktiLink, setBuktiLink] = useState(''), [buktiFile, setBuktiFile] = useState<File | null>(null);
+  const [kirim, setKirim] = useState(false);
+  const ajukan = async () => {
+    setKirim(true);
+    try {
+      const r = await api<{ pesan: string }>('pengajuan_ajukan', { jenis, tanggal: tgl, jam, alasan: alasan.trim(), buktiLink: buktiLink.trim(), buktiFile: await dataBukti(buktiFile) });
+      tutupSheet(); toast(r.pesan); selesai();
+    } catch (e) { galat(e); setKirim(false); }
+  };
+  return (
+    <>
+      <h3>{k.judul}</h3>
+      <div className="row">
+        <div><label>Tanggal</label><input type="date" value={tgl} max={jenis === 'izin_telat' ? undefined : todayStr()} onChange={(e) => setTgl(e.target.value)} /></div>
+        <div><label>{k.label}</label><input type="time" value={jam} onChange={(e) => setJam(e.target.value)} /></div>
+      </div>
+      <div className="tiny muted" style={{ marginTop: 6 }}>{k.ket}</div>
+      <label>Alasan</label>
+      <textarea value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder={k.contoh} />
+      <InputBuktiPengajuan link={buktiLink} setLink={setBuktiLink} file={buktiFile} setFile={setBuktiFile} />
+      <button className="btn" disabled={kirim} onClick={ajukan}><Ikon n="send" />Kirim ke Atasan</button>
       <button className="btn ghost" onClick={tutupSheet}>Batal</button>
     </>
   );

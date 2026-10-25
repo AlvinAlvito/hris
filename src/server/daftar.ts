@@ -12,16 +12,15 @@ import { aksiInfo } from './aksi/informasi';
 import { aksiInbox } from './aksi/inbox';
 import { aksiBranding } from './aksi/branding';
 import { aksiPersetujuan } from './aksi/persetujuan';
-import { aksiJadwal } from './aksi/jadwal';
 import { aksiAdmin } from './aksi/admin';
 import { aksiKaryawan } from './aksi/karyawan';
 import { aksiDashboard } from './aksi/dashboard';
 import { aksiLaporan } from './aksi/laporan';
-import { aksiReimburse } from './aksi/reimburse';
-import { aksiKasbon } from './aksi/kasbon';
 import { aksiPayroll } from './aksi/payroll';
+import { aksiOrganisasi } from './aksi/organisasi';
+import { aksiRekap } from './aksi/rekap';
 
 export const AKSI: KumpulanAksi = {
   ...aksiAuth, ...aksiAbsen, ...aksiPengajuan, ...aksiInfo, ...aksiInbox, ...aksiBranding,
-  ...aksiPersetujuan, ...aksiJadwal, ...aksiAdmin, ...aksiKaryawan, ...aksiDashboard, ...aksiLaporan, ...aksiReimburse, ...aksiKasbon, ...aksiPayroll,
+  ...aksiPersetujuan, ...aksiAdmin, ...aksiKaryawan, ...aksiDashboard, ...aksiLaporan, ...aksiPayroll, ...aksiOrganisasi, ...aksiRekap,
 };

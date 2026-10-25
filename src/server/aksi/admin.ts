@@ -3,9 +3,10 @@ import bcrypt from 'bcryptjs';
 import { exec, nilai, q, q1, sisipkan, type Baris } from '@/lib/db';
 import { f, gagal, i, s } from '@/lib/http';
 import {
-  batasJamTerbuka, cabangPublik, cutiAktif, jadwalHari, jamTeks, labelKet, logAksi, need, shiftById, sisaCuti,
+  batasJamTerbuka, cabangPublik, cakupanTim, cutiAktif, jadwalHari, jamKerjaHari, jamTeks, labelKet, logAksi, need, sisaCuti, sqlCakupan,
 } from '@/lib/aturan';
-import { setgInt, setSetting, settingsPublik } from '@/lib/pengaturan';
+import { hitungAbsensi } from '@/lib/absensiHitung';
+import { jadwalKerjaSah, setgInt, setSetting, settingsPublik } from '@/lib/pengaturan';
 import { absRow, ambilBiodata, userPublik } from '@/lib/format';
 import { epoch, POLA_JAM, POLA_TGL, sekarangSql, tambahHari, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
@@ -32,14 +33,14 @@ export const aksiAdmin: KumpulanAksi = {
     const ket: Record<number, { jenis: string; status: string }> = {};
     for (const k of await q(`SELECT user_id,jenis,status FROM ketidakhadiran WHERE tanggal=?
       AND status IN ('Menunggu Rekomendasi','Menunggu HR','Disetujui')`, [tgl])) ket[k.user_id] = { jenis: labelKet(k.jenis), status: k.status };
-    const data = [];
+    const data = [], jk = await jamKerjaHari(tgl), jamHariIni = jk ? `${jk[0]}–${jk[1]}` : 'LIBUR';
     for (const r of rows) {
       const j = await jadwalHari(r, tgl);
       data.push({
         id: r.id, nik: r.nik, nama: r.nama, dept: r.dept, role: r.role, lokasiMode: r.lokasi_mode,
         cabangNama: r.cnama ?? '', cabangTipe: r.ctipe ?? '', jamMode: r.jam_mode, shiftNama: r.shift_nama ?? '',
         menitKerja: r.menit_kerja ?? 0, targetMenit: r.atarget ?? 0, kurangMenit: r.kurang_menit ?? 0, lemburMenit: r.lembur_menit ?? 0,
-        jadwalHariIni: j.libur ? 'LIBUR' : r.jam_mode === 'fleksibel' ? 'Fleksibel ' + jamTeks(r.target_menit) : j.shift?.nama ?? '',
+        jadwalHariIni: j.libur ? 'LIBUR' : r.jam_mode === 'fleksibel' ? 'Fleksibel ' + jamTeks(r.target_menit) : j.shift?.nama ?? jamHariIni,
         inTime: r.in_time ? String(r.in_time).slice(0, 5) : '', outTime: r.out_time ? String(r.out_time).slice(0, 5) : '',
         terlambat: r.terlambat === 1, menitTelat: r.menit_telat ?? 0, absenId: r.aid ?? null,
         foto: r.in_photo ? '/uploads/' + r.in_photo : '', amode: r.amode, jarak: r.in_jarak ?? null,
@@ -105,7 +106,7 @@ export const aksiAdmin: KumpulanAksi = {
     const id = i(m, 'id'), nik = s(m, 'nik'), nama = s(m, 'nama'), pin = s(m, 'pin');
     if (!nik || !nama) gagal('NIK dan nama wajib diisi');
     const role = s(m, 'role', 'karyawan');
-    if (!['karyawan', 'admin', 'direktur'].includes(role)) gagal('Peran tidak sah');
+    if (!['karyawan', 'atasan', 'admin', 'direktur'].includes(role)) gagal('Peran tidak sah');
     if (role === 'direktur' && u.role !== 'direktur') gagal('Hanya Super Admin yang dapat membuat akun Super Admin');
     const lm = s(m, 'lokasiMode', 'kantor');
     if (!['kantor', 'lapangan', 'bebas'].includes(lm)) gagal('Mode lokasi tidak sah');
@@ -116,9 +117,14 @@ export const aksiAdmin: KumpulanAksi = {
     if (cabangId && !(await q1('SELECT id FROM cabang WHERE id=?', [cabangId]))) gagal('Lokasi kerja tidak ditemukan');
     if (lm === 'kantor' && !cabangId) gagal('Pilih lokasi kerja (kantor pusat / cabang) untuk mode Kantor');
     const jm = s(m, 'jamMode', 'tetap');
-    if (!['tetap', 'shift', 'fleksibel'].includes(jm)) gagal('Pola jam kerja tidak sah');
-    let shiftId: number | null = i(m, 'shiftId') || null;
-    if (jm === 'shift') { if (!shiftId || !(await shiftById(shiftId))) gagal('Pilih shift bawaan untuk karyawan bermode Shift'); } else shiftId = null;
+    if (!['tetap', 'fleksibel'].includes(jm)) gagal('Pola jam kerja tidak sah');
+    const shiftId: number | null = null;
+    // unit organisasi & jabatan dari master; teksnya disalin ke kolom dept & jabatan
+    const unitId = i(m, 'unitId') || null, jabatanId = i(m, 'jabatanId') || null;
+    const unit = unitId ? await q1('SELECT id, nama FROM unit_organisasi WHERE id=?', [unitId]) : null;
+    const jab = jabatanId ? await q1('SELECT id, nama, unit_id FROM jabatan WHERE id=?', [jabatanId]) : null;
+    if (unitId && !unit) gagal('Unit organisasi tidak ditemukan');
+    if (jabatanId && !jab) gagal('Jabatan tidak ditemukan');
     const targetMenit = Math.max(60, Math.min(1440, i(m, 'targetMenit', await setgInt('target_menit_default', 480))));
     let intiA = s(m, 'intiMulai'), intiB = s(m, 'intiSelesai');
     if (jm === 'fleksibel' && (intiA !== '' || intiB !== '')) {
@@ -148,7 +154,8 @@ export const aksiAdmin: KumpulanAksi = {
       }
     }
     const data: Baris = {
-      nik, nama, jabatan: s(m, 'jabatan', 'Staff'), dept: s(m, 'dept'), cabang_id: cabangId, jam_mode: jm, shift_id: shiftId,
+      nik, nama, jabatan: jab ? jab.nama : s(m, 'jabatan', 'Staff'), dept: unit ? unit.nama : s(m, 'dept'), unit_id: unit?.id ?? null, jabatan_id: jab?.id ?? null,
+      cabang_id: cabangId, jam_mode: jm, shift_id: shiftId,
       target_menit: targetMenit, inti_mulai: intiA ? intiA + ':00' : null, inti_selesai: intiB ? intiB + ':00' : null,
       tgl_masuk: s(m, 'tglMasuk', tglWIB()), role, cuti_mode: role === 'direktur' ? 'off' : s(m, 'cutiMode', 'auto'),
       jatah: i(m, 'jatah', 12), lokasi_mode: lm, min_jarak_km: f(m, 'minJarakKm', 2.5),
@@ -194,7 +201,7 @@ export const aksiAdmin: KumpulanAksi = {
 
   /* ---------- absensi ---------- */
   async adm_absensi(m) {
-    await need(['admin']);
+    const saya = await need(['atasan']), tim = await cakupanTim(saya);
     const { bl, th } = bulanTahun(m), uid = i(m, 'userId'), cid = i(m, 'cabangId');
     const tanggal = s(m, 'tanggal'), mt = /^(\d{4})-(\d{2})-(\d{2})$/.exec(tanggal);
     const d = mt ? new Date(Date.UTC(+mt[1], +mt[2] - 1, +mt[3])) : null;
@@ -205,6 +212,10 @@ export const aksiAdmin: KumpulanAksi = {
     if (uid) { where += ' AND a.user_id=?'; p.push(uid); }
     if (cid) { where += ' AND u.cabang_id=?'; p.push(cid); }
     if (h.cari) { where += ' AND (u.nama LIKE ? OR u.nik LIKE ? OR u.dept LIKE ?)'; p.push(polaCari(h.cari), polaCari(h.cari), polaCari(h.cari)); }
+    const appr = s(m, 'approval');
+    if (['menunggu', 'disetujui', 'ditolak'].includes(appr)) { where += ' AND a.approval=?'; p.push(appr); }
+    if (s(m, 'kategori') === 'telat') where += ' AND a.terlambat=1';
+    where += sqlCakupan(tim, 'a.user_id');
     const sumber = ' FROM absensi a JOIN users u ON u.id=a.user_id' + where;
     const total = Number(await nilai('SELECT COUNT(*)' + sumber, p));
     const rows = await q('SELECT a.*, u.nik,u.nama,u.dept' + sumber + ' ORDER BY a.tanggal DESC, u.nama' + (m.all ? '' : ' LIMIT ? OFFSET ?'), m.all ? p : [...p, h.limit, h.offset]);
@@ -212,12 +223,12 @@ export const aksiAdmin: KumpulanAksi = {
     return m.all ? items : hasilHalaman(items, total, h.page);
   },
   async adm_lupa_out(m) {
-    await need(['admin']);
+    const saya = await need(['atasan']), tim = await cakupanTim(saya);
     await exec(`UPDATE absensi SET lupa_out=1 WHERE in_time IS NOT NULL AND out_time IS NULL AND lupa_out=0
       AND TIMESTAMPDIFF(HOUR, TIMESTAMP(tanggal, in_time), NOW()) > ?`, [await batasJamTerbuka()]);
     const cid = i(m, 'cabangId');
     return (await q(`SELECT a.*, u.nik,u.nama,u.dept FROM absensi a JOIN users u ON u.id=a.user_id
-      WHERE a.in_time IS NOT NULL AND a.out_time IS NULL AND a.lupa_out=1${cid ? ' AND u.cabang_id=?' : ''}
+      WHERE a.in_time IS NOT NULL AND a.out_time IS NULL AND a.lupa_out=1${cid ? ' AND u.cabang_id=?' : ''}${sqlCakupan(tim, 'a.user_id')}
       ORDER BY a.tanggal DESC, u.nama LIMIT 200`, cid ? [cid] : [])).map(absRow);
   },
   /* koreksi manual: semua dihitung ulang dari jam yang dimasukkan, dan tercatat siapa & mengapa */
@@ -231,45 +242,17 @@ export const aksiAdmin: KumpulanAksi = {
     const jamIn = s(m, 'jamMasuk'), jamOut = s(m, 'jamPulang');
     if (!POLA_JAM.test(jamIn)) gagal('Jam masuk tidak sah');
     if (jamOut !== '' && !POLA_JAM.test(jamOut)) gagal('Jam pulang tidak sah');
-    const tglMasuk = a.tanggal, inTs = epoch(tglMasuk, jamIn);
-    let outTime: string | null = null, tglPulang: string | null = null, menitKerja = 0, kurang = 0, lembur = 0, langgar = 0, lupa = 1;
-    if (jamOut !== '') {
-      // tanggal pulang: hari yang sama, atau hari berikutnya bila jam pulang lebih awal
-      let tglOut = s(m, 'tglPulang');
-      if (tglOut !== '' && POLA_TGL.test(tglOut)) { if (tglOut < tglMasuk) gagal('Tanggal pulang tidak boleh sebelum tanggal masuk'); }
-      else tglOut = epoch(tglMasuk, jamOut) <= inTs ? tambahHari(tglMasuk, 1) : tglMasuk;
-      const outTs = epoch(tglOut, jamOut);
-      menitKerja = Math.round((outTs - inTs) / 60);
-      if (menitKerja <= 0) gagal('Jam pulang harus setelah jam masuk');
-      if (menitKerja > 1440) gagal('Durasi kerja melebihi 24 jam — periksa lagi tanggal dan jamnya');
-      outTime = jamOut + ':00'; tglPulang = tglOut !== tglMasuk ? tglOut : null; lupa = 0;
-      const target = Number(a.target_menit);
-      kurang = target > 0 ? Math.max(0, target - menitKerja) : 0;
-      const lemburMin = await setgInt('lembur_min_menit', 30);
-      lembur = target > 0 && menitKerja - target >= lemburMin && !a.izin_sesi ? menitKerja - target : 0;
-      if ((a.ujm ?? 'tetap') === 'fleksibel' && a.inti_mulai && a.inti_selesai) {
-        const intiA = epoch(tglMasuk, a.inti_mulai); let intiB = epoch(tglMasuk, a.inti_selesai);
-        if (intiB <= intiA) intiB += 86400;
-        if (inTs > intiA || outTs < intiB) langgar = 1;
-      }
-    }
-    // hitung ulang keterlambatan terhadap jadwal yang tersimpan di baris itu (izin pagi tidak dihitung telat)
-    let telat = 0, menitTelat = 0;
-    if (a.jadwal_in && a.izin_sesi !== 'pagi') {
-      let tol = (a.ujm ?? 'tetap') === 'shift' ? 0 : await setgInt('toleransi', 10);
-      if (a.shift_id) { const sh = await shiftById(a.shift_id); if (sh) tol = sh.toleransi; }
-      const seharusnya = epoch(tglMasuk, a.jadwal_in);
-      if (inTs > seharusnya + tol * 60) { telat = 1; menitTelat = Math.floor((inTs - seharusnya) / 60); }
-    }
+    const h = await hitungAbsensi(a, { jam_mode: a.ujm, inti_mulai: a.inti_mulai, inti_selesai: a.inti_selesai }, jamIn, jamOut, s(m, 'tglPulang'));
     const sebelum = String(a.in_time).slice(0, 5) + '→' + (a.out_time ? String(a.out_time).slice(0, 5) : 'kosong');
     const sesudah = jamIn + '→' + (jamOut || 'kosong');
     await exec(`UPDATE absensi SET in_time=?, out_time=?, tgl_pulang=?, menit_kerja=?, kurang_menit=?, lembur_menit=?, langgar_inti=?,
       terlambat=?, menit_telat=?, lupa_out=?, dikoreksi=1, koreksi_oleh=?, koreksi_catatan=?, tgl_koreksi=NOW() WHERE id=?`,
-    [jamIn + ':00', outTime, tglPulang, menitKerja, kurang, lembur, langgar, telat, menitTelat, lupa, u.nama, catatan, id]);
+    [h.in_time, h.out_time, h.tgl_pulang, h.menit_kerja, h.kurang_menit, h.lembur_menit, h.langgar_inti, h.terlambat, h.menit_telat, h.lupa_out,
+      u.nama, catatan, id]);
     await logAksi(u.id, 'koreksi_absensi', `${a.nik} ${a.tanggal} ${sebelum} jadi ${sesudah} — ${catatan}`);
     const baris = await q1('SELECT a.*, u.nik,u.nama,u.dept FROM absensi a JOIN users u ON u.id=a.user_id WHERE a.id=?', [id]);
     return {
-      pesan: jamOut ? `Absensi dikoreksi. Total kerja ${jamTeks(menitKerja)}.` : 'Jam masuk dikoreksi. Jam pulang masih kosong — baris tetap ditandai lupa clock out.',
+      pesan: jamOut ? `Absensi dikoreksi. Total kerja ${jamTeks(h.menit_kerja)}.` : 'Jam masuk dikoreksi. Jam pulang masih kosong — baris tetap ditandai lupa clock out.',
       baris: absRow(baris!),
     };
   },
@@ -287,14 +270,13 @@ export const aksiAdmin: KumpulanAksi = {
           COALESCE(SUM(CASE WHEN mode='lapangan' THEN 1 ELSE 0 END),0) lap
         FROM absensi WHERE user_id=? AND YEAR(tanggal)=? AND MONTH(tanggal)=?`, [u.id, th, bl]))!;
       const n = async (sql: string) => Number(await nilai(sql, [u.id, th, bl]));
-      const sh = await shiftById(u.shift_id);
       hasil.push({
         nik: u.nik, nama: u.nama, dept: u.dept, jabatan: u.jabatan, cabang: u.cnama ?? '', peran: u.role,
         hadir: Number(r.hadir), telat: Number(r.telat), menitTelat: Number(r.mtelat), belumOut: Number(r.blmout),
         jamKerja: jam(r.mkerja), lapangan: Number(r.lap), polaJam: u.jam_mode,
         lemburDisetujuiJam: jam(await n(`SELECT COALESCE(SUM(menit),0) FROM pengajuan WHERE user_id=? AND jenis='lembur' AND status='Disetujui' AND YEAR(tanggal)=? AND MONTH(tanggal)=?`)),
         pengajuanDisetujui: await n(`SELECT COUNT(*) FROM pengajuan WHERE user_id=? AND status='Disetujui' AND YEAR(tanggal)=? AND MONTH(tanggal)=?`),
-        shiftBawaan: sh?.nama ?? '', targetJam: jam(r.mtarget), kurangJam: jam(r.mkurang), lemburJam: jam(r.mlembur),
+        targetJam: jam(r.mtarget), kurangJam: jam(r.mkurang), lemburJam: jam(r.mlembur),
         cutiBulanIni: await n(`SELECT COALESCE(SUM(hari),0) FROM cuti WHERE user_id=? AND status='Disetujui' AND YEAR(mulai)=? AND MONTH(mulai)=?`),
         sisaCuti: cutiAktif(u) ? await sisaCuti(u) : 0,
         ketDisetujui: await n(`SELECT COUNT(*) FROM ketidakhadiran WHERE user_id=? AND status='Disetujui' AND YEAR(tanggal)=? AND MONTH(tanggal)=?`),
@@ -308,10 +290,15 @@ export const aksiAdmin: KumpulanAksi = {
     const u = await need(['admin']);
     const kunci = ['perusahaan', 'slogan', 'jam_masuk', 'jam_pulang', 'toleransi', 'jatah_default', 'min_jarak_default', 'wajib_foto',
       'geofence_on', 'titik_awal_oleh_admin', 'office_lat', 'office_lng', 'radius', 'rekomendasi_atasan', 'libur_minggu_nonshift',
-      'libur_nasional_aktif', 'hari_kerja_seminggu', 'batas_jam_terbuka', 'lembur_min_menit', 'target_menit_default',
-      'reimburse_kategori', 'reimburse_maks_hari', 'kasbon_maks_kali_gaji', 'kasbon_tenor_maks', 'kasbon_satu_aktif'];
+      'libur_nasional_aktif', 'batas_jam_terbuka', 'lembur_min_menit', 'target_menit_default'];
     for (const k of ['jam_masuk', 'jam_pulang']) if (k in m && !POLA_JAM.test(String(m[k]))) gagal('Format jam tidak sah (JJ:MM)');
     for (const k of kunci) if (k in m) await setSetting(k, typeof m[k] === 'boolean' ? (m[k] ? 1 : 0) : String(m[k] ?? ''));
+    if ('jadwal_kerja' in m) {
+      const jk = jadwalKerjaSah(m.jadwal_kerja);
+      if (!jk) gagal('Jam kerja tidak sah: isi jam masuk & pulang (JJ:MM) dengan jam pulang setelah jam masuk');
+      if (!Object.values(jk).some(Boolean)) gagal('Minimal satu hari kerja dalam seminggu');
+      await setSetting('jadwal_kerja', JSON.stringify(jk));
+    }
     await logAksi(u.id, 'ubah_pengaturan');
     return { settings: await settingsPublik() };
   },

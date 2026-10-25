@@ -1,5 +1,5 @@
 /* Data grafik dashboard & ringkasan */
-import { q, q1, type Baris } from '@/lib/db';
+import { q, type Baris } from '@/lib/db';
 import { i } from '@/lib/http';
 import { need } from '@/lib/aturan';
 import { statusHarian } from '@/lib/statusHarian';
@@ -22,6 +22,7 @@ export const aksiDashboard: KumpulanAksi = {
       for (const p of Object.values(peta)) {
         const st = p[d] ?? 'luar';
         if (st === 'hadir' || st === 'telat' || st === 'mangkir' || st === 'libur') n[st]++;
+        else if (st === 'setengah') n.hadir++;
         else if (st === 'cuti' || st === 'ket') n.izin++;
       }
       for (const k of Object.keys(n)) seri[k].push(n[k]);
@@ -32,11 +33,12 @@ export const aksiDashboard: KumpulanAksi = {
     for (const x of users) {
       const st = peta[x.id]?.[sampai] ?? 'luar';
       if (st in hariIni) hariIni[st]++;
+      else if (st === 'setengah') hariIni.hadir++;
       const l = x.cnama || 'Tanpa lokasi';
       if (!lokasi.has(l)) lokasi.set(l, { nama: l, total: 0, hadir: 0, libur: 0 });
       const o = lokasi.get(l)!;
       o.total++;
-      if (st === 'hadir' || st === 'telat') o.hadir++;
+      if (st === 'hadir' || st === 'telat' || st === 'setengah') o.hadir++;
       if (st === 'libur' || st === 'cuti' || st === 'ket') o.libur++;
     }
     /* komposisi SDM */
@@ -50,16 +52,11 @@ export const aksiDashboard: KumpulanAksi = {
       GROUP BY u.id ORDER BY menit DESC LIMIT 7`);
     const jam = await q(`SELECT YEARWEEK(tanggal,3) mg, MIN(tanggal) awal, ROUND(AVG(menit_kerja)/60,2) rata, ROUND(SUM(lembur_menit)/60,1) lembur
       FROM absensi WHERE out_time IS NOT NULL AND tanggal >= DATE_SUB(CURDATE(), INTERVAL 8 WEEK) GROUP BY mg ORDER BY mg`);
-    const rb = await q(`SELECT kategori, SUM(COALESCE(nominal_disetujui, nominal)) total, COUNT(*) n FROM reimburse
-      WHERE status IN ('Disetujui','Dibayar') AND tanggal >= DATE_SUB(CURDATE(), INTERVAL 90 DAY) GROUP BY kategori ORDER BY total DESC`);
-    const ks = await q1("SELECT COALESCE(SUM(nominal - terbayar),0) sisa, COUNT(*) n FROM kasbon WHERE status='Aktif'");
     return {
       tanggal, seri, hariIni, total: users.length, lokasi: [...lokasi.values()],
       dept: grup('dept'), statusKerja: grup('status_kerja'), jk: grup('jk'),
       topTelat: top.map((r) => ({ nama: r.nama, menit: Number(r.menit), kali: Number(r.kali) })),
       jamMingguan: jam.map((r) => ({ awal: r.awal, rata: Number(r.rata), lembur: Number(r.lembur) })),
-      reimburse: rb.map((r) => ({ kategori: r.kategori, total: Number(r.total), n: Number(r.n) })),
-      kasbon: { sisa: Number(ks?.sisa ?? 0), jumlah: Number(ks?.n ?? 0) },
     };
   },
 };

@@ -34,12 +34,12 @@ export default function Beranda() {
     if (j.libur) chip = j.sumber === 'nasional' ? 'Libur resmi' + (j.ket ? ' · ' + j.ket : '') : 'Libur';
     else if (j.shift) chip = `${j.shift.nama} · ${j.shift.jamMasuk}–${j.shift.jamPulang}`;
     else if (j.jamMode === 'fleksibel') chip = 'Fleksibel · target ' + jamKerjaTeks(j.target);
-    else chip = `Jam kerja ${settings.jamMasuk}–${settings.jamPulang}`;
+    else chip = j.jamKerja ? `Jam kerja ${j.jamKerja[0]}–${j.jamKerja[1]}` : 'Libur';
   }
   const badge: [string, string][] = [];
   if (a) {
     if (a.jamMode === 'fleksibel') badge.push(['Fleksibel', 'b-green']);
-    else if (a.terlambat) badge.push([`Terlambat ${a.menitTelat} menit`, 'b-red']);
+    else if (a.terlambat) badge.push([`Terlambat ${a.menitTelat} menit${a.telatDiizinkan ? ' (diizinkan)' : ''}`, a.telatDiizinkan ? 'b-amber' : 'b-red']);
     else badge.push(['Tepat waktu', 'b-green']);
     if (a.kerjaDari) badge.push([a.kerjaDari === 'wfh' ? 'WFH' : 'Dinas luar kota', 'b-blue']);
     if (a.shiftNama && a.jamMode === 'shift') badge.push([a.shiftNama, 'b-blue']);
@@ -47,6 +47,8 @@ export default function Beranda() {
     if (a.lemburMenit > 0) badge.push(['Lembur ' + jamKerjaTeks(a.lemburMenit), 'b-purple']);
     if (a.inLuar) badge.push(['Di luar area kantor', 'b-amber']);
     if (!a.outTime) badge.push(['Belum absen pulang', 'b-gray']);
+    if (a.setengahHari) badge.push(['Setengah hari tanpa izin', 'b-red']);
+    badge.push(a.approval === 'disetujui' ? ['Disetujui atasan', 'b-green'] : a.approval === 'ditolak' ? ['Ditolak atasan', 'b-red'] : ['Menunggu approval atasan', 'b-gray']);
   }
 
   return (
@@ -58,9 +60,10 @@ export default function Beranda() {
             <h2>{me?.nama.split(' ')[0]}</h2>
             <div className="date" suppressHydrationWarning>{tglIndo(todayStr(jam))}</div>
           </div>
-          <div className="jam-besar" suppressHydrationWarning>
-            <div className="clock">{pad(jam.getHours())}:{pad(jam.getMinutes())}</div>
-            <div className="dtk">{pad(jam.getSeconds())} detik · WIB</div>
+          {/* jam berjalan: nilai server & browser pasti berbeda beberapa detik, jadi abaikan selisih hidrasinya */}
+          <div className="jam-besar">
+            <div className="clock" suppressHydrationWarning>{pad(jam.getHours())}:{pad(jam.getMinutes())}</div>
+            <div className="dtk" suppressHydrationWarning>{pad(jam.getSeconds())} detik · WIB</div>
           </div>
         </div>
         <div id="jadwalChip">
@@ -90,7 +93,7 @@ export default function Beranda() {
             <div className="note">Hari ini Anda mengajukan <b>{d.ketHariIni.jenisLabel}</b> ({d.ketHariIni.status === 'Disetujui' ? 'disetujui' : 'menunggu HC'})</div>
           )}
           {d && !a && (j?.libur ? <div className="note">Hari ini Anda <b>{j.liburMingguan ? 'libur mingguan' : 'dijadwalkan libur'}</b>. Tidak wajib absen.</div>
-            : <div>Belum absen · masuk pukul <b>{settings.jamMasuk}</b>, toleransi {settings.toleransi} menit</div>)}
+            : <div>Belum absen · masuk pukul <b>{j?.jamKerja?.[0] ?? settings.jamMasuk}</b>, toleransi {settings.toleransi} menit</div>)}
           {a && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{badge.map(([t, c]) => <span key={t} className={'badge ' + c}>{t}</span>)}</div>}
         </div>
         <div className="hero-act">
@@ -116,7 +119,7 @@ export default function Beranda() {
           <div className="card">
             <h3><Ikon n="trending-up" />Bulan Ini <span className="m">· {NAMA_BULAN[jam.getMonth()]} {jam.getFullYear()}</span></h3>
             <div className="statgrid g3">
-              {([['circle-check', 'Hadir', d?.hadir ?? 0], ['clock-alert', 'Terlambat', d?.telat ?? 0],
+              {([['circle-check', 'Hadir', d?.hadir ?? 0], ['clock-alert', 'Terlambat', `${d?.telat ?? 0}× · ${jamKerjaTeks(d?.menitTelatBulan ?? 0)}`],
                 ['plane', 'Sisa Cuti', me?.cutiAktif ? me.sisa : '—'], ['medal', 'Masa Kerja', masaKerjaTeks(me?.masaKerjaBulan ?? 0)],
                 ['hourglass', 'Kurang Jam', jamKerjaTeks(d?.kurangBulan ?? 0)], ['timer', 'Lembur', jamKerjaTeks(d?.lemburBulan ?? 0)]] as [string, string, any][]).map(([ic, k, v]) => (
                 <div key={k} className="stat"><span className="si"><Ikon n={ic} /></span><div className="k">{k}</div>
@@ -191,7 +194,7 @@ function KartuJadwal({ j, a }: { j: Data; a: Data | null }) {
           <div className="tiny muted" style={{ marginTop: 4 }}>{a.kurangMenit > 0 ? 'Kurang ' + jamKerjaTeks(a.kurangMenit) + ' dari target' : a.lemburMenit > 0 ? 'Lembur ' + jamKerjaTeks(a.lemburMenit) : 'Target hari ini terpenuhi'}</div></>}
       </div>)}
     </>);
-  } else isi = <div className="note">Jam kerja tetap <b>{settings.jamMasuk} – {settings.jamPulang}</b> · toleransi {settings.toleransi} menit</div>;
+  } else isi = <div className="note">{j.jamKerja ? <>Jam kerja hari ini <b>{j.jamKerja[0]} – {j.jamKerja[1]}</b> · toleransi {settings.toleransi} menit</> : 'Hari ini libur mingguan'}</div>;
   return <div className="card"><h3><Ikon n="clock" />Jadwal Hari Ini</h3>{isi}</div>;
 }
 

@@ -30,6 +30,30 @@ CREATE TABLE IF NOT EXISTS shift (
   UNIQUE KEY uq_shift_nama (nama)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS unit_organisasi (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  nama       VARCHAR(120) NOT NULL,
+  kode       VARCHAR(20)  NOT NULL DEFAULT '',
+  tingkat    ENUM('direksi','divisi','departemen','unit') NOT NULL DEFAULT 'divisi',
+  induk_id   INT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX (induk_id), INDEX (tingkat),
+  CONSTRAINT fk_unit_induk FOREIGN KEY (induk_id) REFERENCES unit_organisasi(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS jabatan (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  nama       VARCHAR(120) NOT NULL,
+  unit_id    INT NULL,
+  atasan_jabatan_id INT NULL,                  -- jabatan yang membawahi (melapor ke)
+  jenis      ENUM('struktural','fungsional','staf') NOT NULL DEFAULT 'staf',
+  keterangan VARCHAR(255) NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX (unit_id), INDEX (atasan_jabatan_id),
+  CONSTRAINT fk_jabatan_unit FOREIGN KEY (unit_id) REFERENCES unit_organisasi(id) ON DELETE SET NULL,
+  CONSTRAINT fk_jabatan_atasan FOREIGN KEY (atasan_jabatan_id) REFERENCES jabatan(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS users (
   id            INT AUTO_INCREMENT PRIMARY KEY,
   nik           VARCHAR(50)  NOT NULL UNIQUE,
@@ -57,6 +81,8 @@ CREATE TABLE IF NOT EXISTS users (
   libur_hari    VARCHAR(20)  NULL,              -- hari libur mingguan (1-7 ISO, koma). NULL=bawaan, '0'=tidak ada
   -- ---- data kepegawaian ----
   atasan_id     INT          NULL,              -- atasan langsung (struktur organisasi)
+  unit_id       INT          NULL,              -- unit organisasi (master unit_organisasi); teks di kolom dept
+  jabatan_id    INT          NULL,              -- jabatan (master jabatan); teks di kolom jabatan
   status_kerja  ENUM('tetap','kontrak','probation','magang','harian','freelance') NOT NULL DEFAULT 'tetap',
   kontrak_mulai DATE         NULL,
   kontrak_selesai DATE       NULL,
@@ -130,16 +156,22 @@ CREATE TABLE IF NOT EXISTS absensi (
   terlambat   TINYINT(1) NOT NULL DEFAULT 0,
   menit_telat INT NOT NULL DEFAULT 0,
   menit_kerja INT NOT NULL DEFAULT 0,
+  telat_diizinkan TINYINT(1) NOT NULL DEFAULT 0,  -- pengajuan izin terlambat disetujui
   lupa_out    TINYINT(1) NOT NULL DEFAULT 0,      -- clock in tanpa clock out, sudah lewat batas wajar
   dikoreksi   TINYINT(1) NOT NULL DEFAULT 0,      -- pernah diperbaiki HR / Direktur
   koreksi_oleh VARCHAR(150) NOT NULL DEFAULT '',
   koreksi_catatan VARCHAR(255) NOT NULL DEFAULT '',
   tgl_koreksi DATETIME NULL,
+  -- persetujuan absensi oleh Supervisor (timnya) / HC / Super Admin; ditolak = dihitung tidak hadir
+  approval    ENUM('menunggu','disetujui','ditolak') NOT NULL DEFAULT 'menunggu',
+  approval_oleh VARCHAR(150) NOT NULL DEFAULT '',
+  approval_catatan VARCHAR(255) NOT NULL DEFAULT '',
+  tgl_approval DATETIME NULL,
   ip          VARCHAR(45)  NOT NULL DEFAULT '',
   ua          VARCHAR(255) NOT NULL DEFAULT '',
   created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_user_tgl (user_id, tanggal),
-  INDEX (tanggal), INDEX (cabang_id),
+  INDEX (tanggal), INDEX (cabang_id), INDEX (approval),
   CONSTRAINT fk_abs_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -162,11 +194,11 @@ CREATE TABLE IF NOT EXISTS jadwal_shift (
 CREATE TABLE IF NOT EXISTS pengajuan (
   id            INT AUTO_INCREMENT PRIMARY KEY,
   user_id       INT NOT NULL,
-  jenis         ENUM('ganti_shift','libur','lembur') NOT NULL,
+  jenis         ENUM('ganti_shift','libur','lembur','lupa_in','lupa_out','izin_telat') NOT NULL,   -- ganti_shift & libur: data lama
   tanggal       DATE NOT NULL,
   tanggal2      DATE NULL,               -- libur pengganti (untuk pindah libur)
   shift_id      INT NULL,                -- shift yang diminta (ganti shift)
-  jam_mulai     TIME NULL,               -- lembur
+  jam_mulai     TIME NULL,               -- lembur; jam sebenarnya untuk lupa clock in / out; perkiraan tiba untuk izin terlambat
   jam_selesai   TIME NULL,
   menit         INT NOT NULL DEFAULT 0,  -- durasi lembur yang diajukan
   alasan        VARCHAR(255) NOT NULL DEFAULT '',
@@ -516,7 +548,9 @@ INSERT IGNORE INTO settings (k,v) VALUES
   ('office_lat',''), ('office_lng',''), ('radius','200'),
   ('target_menit_default','480'), ('lembur_min_menit','30'), ('rekomendasi_atasan','0'),
   ('batas_jam_terbuka','18'), ('libur_minggu_nonshift','1'), ('libur_nasional_aktif','1'),
-  ('hari_kerja_seminggu','5'),   -- 5 = Senin–Jumat (Sabtu & Minggu libur), 6 = Senin–Sabtu
+  ('hari_kerja_seminggu','5'),   -- data lama; kini diturunkan dari jadwal_kerja
+  -- jam kerja per hari (ISO 1=Senin … 7=Minggu); null = libur
+  ('jadwal_kerja','{"1":["08:30","17:00"],"2":["08:30","17:00"],"3":["08:30","17:00"],"4":["08:30","17:00"],"5":["08:00","17:00"],"6":["08:00","12:00"],"7":null}'),
   -- payroll (lihat RUJUKAN-REGULASI.md) — dapat diubah di Pengaturan
   ('bpjs_kes_p','4'), ('bpjs_kes_k','1'), ('bpjs_kes_batas','12000000'),
   ('jht_p','3.7'), ('jht_k','2'), ('jkk','0.24'), ('jkm','0.3'),

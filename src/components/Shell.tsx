@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { api, pantauSibuk } from '@/lib/klien/api';
 import { labelRole } from '@/lib/klien/format';
 import { NAV, navTerlihat, urutanBawah, type ItemNav } from '@/lib/klien/nav';
-import { isAdminUp, useAplikasi, type Me } from './Aplikasi';
+import { isPenyetuju, useAplikasi, type Me } from './Aplikasi';
 import { Avatar } from './Avatar';
 import { Ikon } from './Ikon';
 
@@ -63,11 +63,7 @@ export function Shell({ children }: { children: ReactNode }) {
   }, [path, me]);
 
   if (!me) return null;
-  const hitung = (c?: string) => {
-    if (!c) return 0;
-    const rek = inbox.semua.find((x) => x.kunci === 'rekomendasi')?.jumlah ?? 0;
-    return c === 'total' ? (isAdminUp(me) ? inbox.total - rek : 0) : rek;
-  };
+  const hitung = (c?: string) => (c === 'total' && isPenyetuju(me) ? inbox.total : 0);
   const Cnt = ({ c }: { c?: string }) => { const n = hitung(c); return n ? <span className="cnt">{n > 99 ? '99+' : n}</span> : null; };
   const aturMini = () => { const v = !mini; setMini(v); try { localStorage.setItem('posi.sidebar', v ? 'mini' : ''); } catch { /* */ } };
   const keluar = async () => {
@@ -126,7 +122,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <div style={{ minWidth: 0 }} id="judulWrap"><h1>{aktif?.t ?? ''}</h1></div>
           <div className="sp" />
           <TombolTampilan />
-          {isAdminUp(me) && (
+          {isPenyetuju(me) && (
             <Link href="/persetujuan" className="tbtn" title="Persetujuan">
               <Ikon n="bell" />{hitung('total') ? <span className="dot">{hitung('total') > 99 ? '99+' : hitung('total')}</span> : null}
             </Link>

@@ -26,7 +26,7 @@ const KOLOM: [string, string, boolean, string, string][] = [
   ['pendidikan', 'Pendidikan', false, 'S1', ''], ['jurusan', 'Jurusan', false, 'Pendidikan Matematika', ''],
   ['bankNama', 'Nama Bank', false, '', ''], ['bankRekening', 'No Rekening', false, '', 'Format kolom sebagai Teks.'],
   ['bankAtasNama', 'Atas Nama Rekening', false, '', ''], ['bpjsKesNo', 'No BPJS Kesehatan', false, '', 'Format kolom sebagai Teks.'],
-  ['bpjsTkNo', 'No BPJS Ketenagakerjaan', false, '', 'Format kolom sebagai Teks.'], ['peran', 'Peran', false, 'Pegawai', 'Pegawai / HC. Kosong = Pegawai.'],
+  ['bpjsTkNo', 'No BPJS Ketenagakerjaan', false, '', 'Format kolom sebagai Teks.'], ['peran', 'Peran', false, 'Staff', 'Staff / Supervisor / HC. Kosong = Staff.'],
   ['pin', 'PIN', false, '', '4–8 digit angka. Kosong untuk karyawan baru = dibuat acak oleh sistem.'],
 ];
 const KOLOM_TANGGAL = ['tglMasuk', 'kontrakMulai', 'kontrakSelesai', 'tglLahir'];

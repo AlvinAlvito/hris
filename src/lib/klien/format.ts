@@ -36,8 +36,9 @@ export function salam(d = new Date()) {
 /* nilai status yang tersimpan di database -> teks tampilan */
 export function teksStatus(s?: string) {
   return String(s || '').replace('Menunggu Finance', 'Menunggu Pencairan').replace('Ditolak Finance', 'Ditolak')
-    .replace('Ditolak Kepala Toko', 'Ditolak').replace('Menunggu Rekomendasi', 'Menunggu').replace(/\bHR\b/, 'HC');
+    .replace('Ditolak Kepala Toko', 'Ditolak').replace('Menunggu Rekomendasi', 'Menunggu').replace('Menunggu HR', 'Menunggu Persetujuan')
+    .replace('Ditolak HR', 'Ditolak');
 }
 export function labelRole(r: string) {
-  return ({ direktur: 'Super Admin', admin: 'HC', finance: 'Finance', atasan: 'Atasan' } as Record<string, string>)[r] || 'Pegawai';
+  return ({ direktur: 'Super Admin', admin: 'HC', finance: 'Finance', atasan: 'Supervisor' } as Record<string, string>)[r] || 'Staff';
 }

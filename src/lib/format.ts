@@ -25,7 +25,7 @@ export async function userPublik(u: User) {
     liburHari: u.libur_hari ?? null, liburHariEfektif: await hariLiburMingguan(u),
     cutiAktif: aktif, jatahEfektif: jatahCuti(u), terpakai: await cutiTerpakai(u.id), sisa: aktif ? await sisaCuti(u) : 0,
     masaKerjaBulan: bulanKerja(u.tgl_masuk),
-    atasanId: u.atasan_id || null, statusKerja: u.status_kerja ?? 'tetap',
+    atasanId: u.atasan_id || null, unitId: u.unit_id || null, jabatanId: u.jabatan_id || null, statusKerja: u.status_kerja ?? 'tetap',
     kontrakMulai: u.kontrak_mulai ?? null, kontrakSelesai: u.kontrak_selesai ?? null, tglKeluar: u.tgl_keluar ?? null,
     jk: u.jk ?? '', tempatLahir: u.tempat_lahir ?? '', tglLahir: u.tgl_lahir ?? null, agama: u.agama ?? '',
     statusNikah: u.status_nikah ?? '', noKtp: u.no_ktp ?? '', npwp: u.npwp ?? '', noHp: u.no_hp ?? '', email: u.email ?? '',
@@ -56,6 +56,10 @@ export function absRow(a: Baris) {
     menitTelat: a.menit_telat, menitKerja: mk, durasi: mk > 0 ? Math.floor(mk / 60) + 'j ' + (mk % 60) + 'm' : '',
     lupaOut: a.lupa_out === 1, dikoreksi: a.dikoreksi === 1, koreksiOleh: a.koreksi_oleh ?? '',
     koreksiCatatan: a.koreksi_catatan ?? '', tglKoreksi: a.tgl_koreksi ?? null,
+    telatDiizinkan: a.telat_diizinkan === 1,
+    // setengah hari tanpa izin: sudah pulang, kerja < 50% target, tidak ada izin setengah hari
+    setengahHari: !!a.out_time && !a.izin_sesi && Number(a.target_menit) > 0 && mk * 2 < Number(a.target_menit),
+    approval: a.approval ?? 'menunggu', approvalOleh: a.approval_oleh ?? '', approvalCatatan: a.approval_catatan ?? '', tglApproval: a.tgl_approval ?? null,
   };
 }
 export function cutiRow(c: Baris) {

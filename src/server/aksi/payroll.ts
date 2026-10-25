@@ -3,10 +3,10 @@
      1. HC menekan "Hitung" untuk periode YYYY-MM  -> draf slip
      2. penyesuaian (bonus, honor kegiatan, THR, koreksi) bila perlu;
         slip karyawan terkait dihitung ulang otomatis
-     3. HC / Super Admin "Finalkan" -> slip terkunci & terlihat karyawan;
-        cicilan kasbon & reimburse lewat gaji tercatat lunas
-     4. bila keliru, periode final TERAKHIR dapat "Dibuka kembali" —
-        pencatatan kasbon & reimburse dibalik.
+     3. HC / Super Admin "Finalkan" -> slip terkunci & terlihat karyawan
+     4. bila keliru, periode final TERAKHIR dapat "Dibuka kembali"
+        (pencatatan kasbon & reimburse dari data lama ikut dibalik).
+   Hari tidak hadir & setengah hari tanpa izin dipotong bila "potong_mangkir" aktif.
    Rumus pajak/BPJS/lembur ada di lib/pph21.ts (teruji tests/pph21.test.ts)
    ===================================================================== */
 import { exec, nilai, q, q1, transaksi, type Baris } from '@/lib/db';
@@ -51,7 +51,8 @@ async function hitungSlip(u: User, per: Baris, prm: Setelan, status: Record<stri
   if (mulai > selesai) return null;
   const hariKal = hariDalamBulan(P), hariKerja = selisihHari(mulai, selesai) + 1;
   const prorata = bulat(hariKerja / hariKal, 4);
-  const n = hitungStatus(status), hadir = n.hadir + n.telat, mangkir = n.mangkir;
+  // setengah hari tanpa izin: tetap dihitung hadir (uang makan dsb.), gaji dipotong ½ hari
+  const n = hitungStatus(status), hadir = n.hadir + n.telat + n.setengah, mangkir = n.mangkir + n.setengah / 2;
 
   const baris: BarisSlip[] = [];
   const tambah = (kode: string, nama: string, jenis: BarisSlip['jenis'], nominal: number, pajak: boolean, ket = '', ref: number | null = null) => {
@@ -90,16 +91,13 @@ async function hitungSlip(u: User, per: Baris, prm: Setelan, status: Record<stri
   for (const x of await q('SELECT * FROM payroll_penyesuaian WHERE periode_id=? AND user_id=? ORDER BY id', [per.id, u.id]))
     tambah('ADJ', x.nama, x.jenis === 'tunjangan' ? 'pendapatan' : 'potongan', Number(x.nominal), x.jenis === 'tunjangan' && Number(x.kena_pajak) === 1, 'penyesuaian', x.id);
 
-  /* reimburse yang dibayar lewat gaji (bukan penghasilan, tidak kena pajak) */
-  for (const r of await q(`SELECT id, kategori, COALESCE(nominal_disetujui, nominal) nom FROM reimburse
-    WHERE user_id=? AND status IN ('Disetujui','Dibayar') AND metode_bayar='gaji' AND periode_gaji=?`, [u.id, P]))
-    tambah('REIMB', 'Reimburse ' + r.kategori, 'pendapatan', Number(r.nom), false, 'klaim #' + r.id, r.id);
-
   /* potongan mangkir (bila diaktifkan di pengaturan) */
   let potMangkir = 0;
   if (prm.potong_mangkir === 1 && mangkir > 0) {
     potMangkir = bulat(upahBulan / prm.hari_kerja_sebulan) * mangkir;
-    tambah('MANGKIR', 'Potongan Tidak Hadir', 'potongan', potMangkir, true, mangkir + ' hari');
+    potMangkir = bulat(potMangkir);
+    const ket = [n.mangkir ? `${n.mangkir} hari tidak hadir` : '', n.setengah ? `${n.setengah}× setengah hari tanpa izin` : ''].filter(Boolean).join(' + ');
+    tambah('MANGKIR', 'Potongan Tidak Hadir', 'potongan', potMangkir, true, ket);
   }
 
   /* BPJS — dasar upah bulanan penuh (atau dasar manual) */
@@ -114,10 +112,6 @@ async function hitungSlip(u: User, per: Baris, prm: Setelan, status: Record<stri
   tambah('PJKM', 'JKM ditanggung perusahaan', 'info', bp.jkm, true);
   tambah('PJHT', 'JHT ditanggung perusahaan', 'info', bp.jhtP, false);
   tambah('PJP', 'JP ditanggung perusahaan', 'info', bp.jpP, false);
-
-  /* kasbon aktif */
-  for (const k of await q("SELECT id, cicilan, nominal - terbayar sisa FROM kasbon WHERE user_id=? AND status='Aktif' AND mulai_potong<=? AND nominal>terbayar", [u.id, P]))
-    tambah('KASBON', 'Cicilan Kasbon', 'potongan', Math.min(Number(k.cicilan), Number(k.sisa)), false, 'sisa ' + rupiah(Number(k.sisa)), k.id);
 
   /* penghasilan bruto untuk pajak: pendapatan kena pajak + premi JKK, JKM, BPJS Kes pemberi kerja */
   let bruto = 0;
@@ -147,7 +141,7 @@ async function hitungSlip(u: User, per: Baris, prm: Setelan, status: Record<stri
   let pend = 0, pot = 0;
   for (const x of baris) { if (x.jenis === 'pendapatan') pend += x.nominal; else if (x.jenis === 'potongan') pot += x.nominal; }
   return {
-    gaji_pokok: gapok, prorata, hari_hadir: hadir, hari_mangkir: mangkir, total_pendapatan: pend, total_potongan: pot,
+    gaji_pokok: gapok, prorata, hari_hadir: hadir, hari_mangkir: n.mangkir, total_pendapatan: pend, total_potongan: pot,
     bruto_pajak: bruto, pph21: pph, pph21_metode: metode, iuran_pegawai: iuran,
     bpjs_perusahaan: bp.kesP + bp.jhtP + bp.jkk + bp.jkm + bp.jpP, thp: pend - pot, ptkp: u.ptkp,
     rincian: JSON.stringify({ baris, pajak: detailPajak, statusHari: n, dasarBpjs: dasar, upahLembur: upahBulan }),
@@ -366,17 +360,6 @@ export const aksiPayroll: KumpulanAksi = {
     if (per.status === 'final') gagal('Periode sudah final');
     if (!Number(await nilai('SELECT COUNT(*) FROM payroll_slip WHERE periode_id=?', [per.id]))) gagal('Belum ada slip pada periode ini');
     await transaksi(async () => {
-      for (const sl of await q('SELECT * FROM payroll_slip WHERE periode_id=?', [per.id])) {
-        const r = typeof sl.rincian === 'string' ? JSON.parse(sl.rincian) : sl.rincian;
-        for (const x of (r?.baris ?? []) as BarisSlip[]) {
-          if (x.kode === 'KASBON' && x.ref) {
-            await exec("INSERT INTO kasbon_bayar (kasbon_id,periode,nominal,sumber,slip_id,dicatat_oleh) VALUES (?,?,?,'gaji',?,?)", [x.ref, per.periode, x.nominal, sl.id, u.nama]);
-            await exec("UPDATE kasbon SET status=IF(terbayar+?>=nominal,'Lunas',status), terbayar=terbayar+? WHERE id=? AND status='Aktif'", [x.nominal, x.nominal, x.ref]);
-          } else if (x.kode === 'REIMB' && x.ref) {
-            await exec("UPDATE reimburse SET status='Dibayar', tgl_bayar=? WHERE id=? AND status='Disetujui' AND metode_bayar='gaji'", [periodeAkhir(per.periode), x.ref]);
-          }
-        }
-      }
       await exec("UPDATE payroll_periode SET status='final', final_oleh=?, tgl_final=NOW(), catatan=? WHERE id=?", [u.nama, s(m, 'catatan').slice(0, 255), per.id]);
     });
     await logAksi(u.id, 'finalkan_payroll', per.periode);

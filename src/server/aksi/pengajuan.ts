@@ -1,12 +1,13 @@
-/* Pengajuan pegawai: cuti, izin/sakit/WFH/dinas/setengah hari, lembur & jadwal. Semua diputus HC. */
+/* Pengajuan pegawai: cuti, izin/sakit/WFH/dinas/setengah hari, lembur, lupa clock in / out, izin terlambat.
+   Diputus Supervisor (timnya), HC, atau Super Admin. */
 import { exec, nilai, q, q1 } from '@/lib/db';
 import { gagal, i, s } from '@/lib/http';
 import {
-  cutiAktif, cutiPending, hitungHari, jadwalHari, jamTeks, KET_TETAP_KERJA, labelKet, logAksi, namaJadwal, need, nilaiJadwal,
-  perluRekomendasi, shiftById, sisaCuti, sudahAdaAbsensi,
+  cutiAktif, cutiPending, hitungHari, jadwalHari, jamTeks, KET_TETAP_KERJA, labelKet, logAksi, need,
+  perluRekomendasi, sisaCuti, sudahAdaAbsensi,
 } from '@/lib/aturan';
 import { cutiRow, ketRow, pengajuanRow, userPublik } from '@/lib/format';
-import { epoch, POLA_JAM, POLA_TGL, tambahHari, tglWIB } from '@/lib/waktu';
+import { epoch, jamWIB, POLA_JAM, POLA_TGL, tambahHari, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
 import { simpanBuktiPengajuan, validasiLinkBukti } from './bukti';
 import { hasilHalaman, paramHalaman, polaCari } from '@/lib/paginasi';
@@ -38,7 +39,7 @@ export const aksiPengajuan: KumpulanAksi = {
     const buktiLink = await simpanBuktiPengajuan(m, u, 'cuti', ins.insertId);
     if (buktiLink) await exec('UPDATE cuti SET bukti_link=? WHERE id=?', [buktiLink, ins.insertId]);
     await logAksi(u.id, 'ajukan_cuti', `${jenis} ${mulai}..${selesai}`);
-    return { pesan: u.role === 'admin' ? 'Terkirim — menunggu persetujuan HC lain atau Super Admin' : 'Pengajuan terkirim, menunggu persetujuan HC' };
+    return { pesan: u.role === 'admin' ? 'Terkirim — menunggu persetujuan HC lain atau Super Admin' : 'Pengajuan terkirim, menunggu persetujuan atasan' };
   },
   async cuti_batal(m) {
     const u = await need();
@@ -87,20 +88,15 @@ export const aksiPengajuan: KumpulanAksi = {
       if (ada) gagal('Sudah ada pengajuan untuk ' + tglId(t));
     }
     const status = (await perluRekomendasi(u)) ? 'Menunggu Rekomendasi' : 'Menunggu HR';
-    let idBukti: number | null = null;
-    for (const t of tanggal) {
-      const ins = await exec('INSERT INTO ketidakhadiran (user_id,tanggal,jenis,sesi,alasan,status) VALUES (?,?,?,?,?,?)', [u.id, t, jenis, sesiIzin, alasan, status]);
-      if (idBukti === null) idBukti = ins.insertId;
-      const link = s(m, 'buktiLink').trim();
-      if (link) await exec('UPDATE ketidakhadiran SET bukti_link=? WHERE id=?', [link, ins.insertId]);
-    }
-    if (idBukti !== null) {
-      const buktiLink = await simpanBuktiPengajuan(m, u, 'ketidakhadiran', idBukti);
-      if (buktiLink) await exec('UPDATE ketidakhadiran SET bukti_link=? WHERE user_id=? AND tanggal BETWEEN ? AND ?', [buktiLink, u.id, tgl, sampai]);
-    }
+    const idBaru: number[] = [];
+    for (const t of tanggal)
+      idBaru.push((await exec('INSERT INTO ketidakhadiran (user_id,tanggal,jenis,sesi,alasan,status) VALUES (?,?,?,?,?,?)', [u.id, t, jenis, sesiIzin, alasan, status])).insertId);
+    // satu bukti untuk seluruh tanggal pada pengajuan ini (bukan pengajuan lama di tanggal yang sama)
+    const buktiLink = await simpanBuktiPengajuan(m, u, 'ketidakhadiran', idBaru[0]);
+    if (buktiLink) await exec(`UPDATE ketidakhadiran SET bukti_link=? WHERE id IN (${idBaru.map(Number).join(',')})`, [buktiLink]);
     await logAksi(u.id, 'ajukan_ketidakhadiran', labelKet(jenis) + ' ' + tgl + (sampai !== tgl ? '..' + sampai : ''));
     const n = tanggal.length;
-    return { pesan: labelKet(jenis) + (n > 1 ? ` ${n} hari` : '') + ' terkirim. Menunggu persetujuan HC.' };
+    return { pesan: labelKet(jenis) + (n > 1 ? ` ${n} hari` : '') + ' terkirim. Menunggu persetujuan atasan.' };
   },
   async ketidakhadiran_saya() {
     const u = await need();
@@ -121,38 +117,17 @@ export const aksiPengajuan: KumpulanAksi = {
     const u = await need();
     const jenis = s(m, 'jenis');
     validasiLinkBukti(m);
-    if (!['ganti_shift', 'libur', 'lembur'].includes(jenis)) gagal('Jenis pengajuan tidak sah');
+    if (!['lembur', 'lupa_in', 'lupa_out', 'izin_telat'].includes(jenis)) gagal('Jenis pengajuan tidak sah');
+    if (jenis !== 'lembur' && u.role === 'direktur') gagal('Super Admin tidak melakukan absensi');
     const tgl = s(m, 'tanggal');
     if (!POLA_TGL.test(tgl)) gagal('Tanggal tidak sah');
     const alasan = s(m, 'alasan');
     if (alasan === '') gagal('Alasan wajib diisi');
     const hariIni = tglWIB();
-    if (jenis !== 'lembur' && tgl < hariIni) gagal('Tanggal yang sudah lewat tidak bisa diajukan');
-    if (jenis === 'lembur' && tgl < tambahHari(hariIni, -7)) gagal('Lembur hanya bisa diajukan untuk 7 hari terakhir ke depan');
-    if (jenis !== 'lembur' && (await sudahAdaAbsensi(u.id, tgl))) gagal('Tanggal itu sudah terlanjur diabsen — hubungi HC untuk koreksi manual');
+    if (tgl < tambahHari(hariIni, -7)) gagal('Pengajuan hanya bisa untuk 7 hari terakhir');
 
-    let tgl2: string | null = null, shiftId: number | null = null, jamA: string | null = null, jamB: string | null = null, menit = 0, sesudah = '';
-    const sebelum = await namaJadwal(await nilaiJadwal(u, tgl));
-    if (jenis === 'ganti_shift') {
-      if (u.jam_mode !== 'shift') gagal('Ganti shift hanya untuk karyawan bermode Shift');
-      shiftId = i(m, 'shiftId');
-      const sh = await shiftById(shiftId);
-      if (!sh) gagal('Shift yang diminta tidak ditemukan');
-      if (sh.aktif !== 1) gagal('Shift itu sedang nonaktif');
-      sesudah = sh.nama;
-      if (sebelum === sesudah) gagal('Shift yang diminta sama dengan jadwal Anda saat ini');
-    } else if (jenis === 'libur') {
-      sesudah = 'LIBUR';
-      if (sebelum === 'LIBUR') gagal('Tanggal itu memang sudah libur');
-      const t2 = s(m, 'tanggal2');
-      if (t2 !== '') {
-        if (!POLA_TGL.test(t2)) gagal('Tanggal pengganti tidak sah');
-        if (t2 < hariIni) gagal('Tanggal pengganti sudah lewat');
-        if (t2 === tgl) gagal('Tanggal pengganti tidak boleh sama');
-        if (await sudahAdaAbsensi(u.id, t2)) gagal('Tanggal pengganti sudah terlanjur diabsen');
-        tgl2 = t2;
-      }
-    } else {
+    let jamA: string | null = null, jamB: string | null = null, menit = 0, sebelum = '', sesudah = '';
+    if (jenis === 'lembur') {
       jamA = s(m, 'jamMulai'); jamB = s(m, 'jamSelesai');
       if (!POLA_JAM.test(jamA) || !POLA_JAM.test(jamB)) gagal('Jam lembur tidak sah');
       let d = Math.round((epoch('2000-01-01', jamB) - epoch('2000-01-01', jamA)) / 60);
@@ -160,17 +135,36 @@ export const aksiPengajuan: KumpulanAksi = {
       if (d > 720) gagal('Durasi lembur tidak wajar (maksimal 12 jam)');
       menit = d; jamA += ':00'; jamB += ':00';
       sesudah = 'Lembur ' + jamTeks(menit);
+    } else {
+      // jam sebenarnya (lupa clock in / out) atau perkiraan jam tiba (izin terlambat)
+      const jam = s(m, 'jam');
+      if (!POLA_JAM.test(jam)) gagal('Jam tidak sah');
+      if (tgl > hariIni) {
+        if (jenis !== 'izin_telat') gagal('Lupa clock in / out hanya untuk hari ini atau yang sudah lewat');
+        if (tgl > tambahHari(hariIni, 30)) gagal('Izin terlambat paling jauh 30 hari ke depan');
+      }
+      if (tgl === hariIni && jenis !== 'izin_telat' && jam > jamWIB().slice(0, 5)) gagal('Jam yang diajukan belum terjadi');
+      const a = await q1('SELECT in_time, out_time FROM absensi WHERE user_id=? AND tanggal=?', [u.id, tgl]);
+      if (jenis === 'lupa_out') {
+        if (!a?.in_time) gagal('Belum ada clock in pada tanggal itu. Ajukan "Lupa Clock In" terlebih dulu.');
+        if (a.out_time) gagal('Jam pulang tanggal itu sudah tercatat');
+        sebelum = 'Masuk ' + String(a.in_time).slice(0, 5);
+      } else if (jenis === 'lupa_in') {
+        sebelum = a?.in_time ? 'Tercatat masuk ' + String(a.in_time).slice(0, 5) : 'Tidak ada clock in';
+      }
+      jamA = jam + ':00';
+      sesudah = (jenis === 'izin_telat' ? 'Perkiraan tiba ' : jenis === 'lupa_in' ? 'Masuk ' : 'Pulang ') + jam;
     }
     const ada = await q1(`SELECT id FROM pengajuan WHERE user_id=? AND tanggal=? AND jenis=?
       AND status IN ('Menunggu Rekomendasi','Menunggu HR')`, [u.id, tgl, jenis]);
     if (ada) gagal('Sudah ada pengajuan sejenis yang masih berjalan untuk tanggal itu');
     const status = (await perluRekomendasi(u)) ? 'Menunggu Rekomendasi' : 'Menunggu HR';
-    const ins = await exec(`INSERT INTO pengajuan (user_id,jenis,tanggal,tanggal2,shift_id,jam_mulai,jam_selesai,menit,alasan,status,jadwal_sebelum,jadwal_sesudah)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, [u.id, jenis, tgl, tgl2, shiftId, jamA, jamB, menit, alasan, status, sebelum, sesudah]);
+    const ins = await exec(`INSERT INTO pengajuan (user_id,jenis,tanggal,jam_mulai,jam_selesai,menit,alasan,status,jadwal_sebelum,jadwal_sesudah)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`, [u.id, jenis, tgl, jamA, jamB, menit, alasan.slice(0, 255), status, sebelum, sesudah]);
     const buktiLink = await simpanBuktiPengajuan(m, u, 'pengajuan', ins.insertId);
     if (buktiLink) await exec('UPDATE pengajuan SET bukti_link=? WHERE id=?', [buktiLink, ins.insertId]);
     await logAksi(u.id, 'ajukan_' + jenis, tgl);
-    return { pesan: 'Pengajuan terkirim. Menunggu keputusan HC.' };
+    return { pesan: 'Pengajuan terkirim. Menunggu keputusan atasan.' };
   },
   async pengajuan_saya() {
     const u = await need();
@@ -186,17 +180,15 @@ export const aksiPengajuan: KumpulanAksi = {
       UNION ALL SELECT 'ket' tipe, k.id, k.created_at diajukan, k.status, k.jenis judul, k.alasan ket, k.catatan_hr catatan, k.bukti_link buktiLink,
         DATE_FORMAT(k.tanggal,'%d/%m/%Y') waktu FROM ketidakhadiran k WHERE k.user_id=?
       UNION ALL SELECT 'pengajuan' tipe, p.id, p.created_at diajukan, p.status, p.jenis judul, p.alasan ket, p.catatan_hr catatan, p.bukti_link buktiLink,
-        CONCAT(DATE_FORMAT(p.tanggal,'%d/%m/%Y'),IF(p.jam_mulai IS NOT NULL,CONCAT(' · ',TIME_FORMAT(p.jam_mulai,'%H:%i'),'–',TIME_FORMAT(p.jam_selesai,'%H:%i')),'')) waktu FROM pengajuan p WHERE p.user_id=?
-      UNION ALL SELECT 'reimburse' tipe, r.id, r.created_at diajukan, r.status, r.kategori judul, r.keterangan ket, r.hr_catatan catatan, r.bukti_link buktiLink,
-        CONCAT(DATE_FORMAT(r.tanggal,'%d/%m/%Y'),' · Rp',FORMAT(r.nominal,0)) waktu FROM reimburse r WHERE r.user_id=?
-      UNION ALL SELECT 'kasbon' tipe, k.id, k.created_at diajukan, k.status, 'Kasbon' judul, k.alasan ket, k.hr_catatan catatan, k.bukti_link buktiLink,
-        CONCAT('Rp',FORMAT(k.nominal,0),' · ',k.tenor,'× cicilan') waktu FROM kasbon k WHERE k.user_id=?`;
+        CONCAT(DATE_FORMAT(p.tanggal,'%d/%m/%Y'),IF(p.jam_mulai IS NOT NULL,CONCAT(' · ',TIME_FORMAT(p.jam_mulai,'%H:%i'),IF(p.jam_selesai IS NOT NULL,CONCAT('–',TIME_FORMAT(p.jam_selesai,'%H:%i')),'')),'')) waktu
+        FROM pengajuan p WHERE p.user_id=? AND p.jenis IN ('lembur','lupa_in','lupa_out','izin_telat')
+`;
     let filter = '';
     if (jenis === 'menunggu') filter += " WHERE status LIKE 'Menunggu%'";
     else if (jenis === 'disetujui') filter += " WHERE status IN ('Disetujui','Dibayar','Aktif','Lunas')";
     else if (jenis === 'ditolak') filter += " WHERE status LIKE 'Ditolak%'";
     else filter += " WHERE status<>'Dibatalkan'";
-    const params: unknown[] = [u.id, u.id, u.id, u.id, u.id];
+    const params: unknown[] = [u.id, u.id, u.id];
     if (h.cari) { filter += ' AND (judul LIKE ? OR ket LIKE ? OR status LIKE ? OR waktu LIKE ?)'; params.push(...Array(4).fill(polaCari(h.cari))); }
     const total = Number(await nilai(`SELECT COUNT(*) FROM (${union}) riwayat${filter}`, params));
     const rows = await q(`SELECT * FROM (${union}) riwayat${filter} ORDER BY diajukan DESC LIMIT ? OFFSET ?`, [...params, h.limit, h.offset]);

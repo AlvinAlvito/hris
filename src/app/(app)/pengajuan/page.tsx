@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useAplikasi } from '@/components/Aplikasi';
 import { Ikon } from '@/components/Ikon';
-import { FormCuti, FormIzin, FormLembur } from '@/components/FormPengajuan';
-import { FormKasbon, FormReimburse } from '@/components/Keuangan';
+import { FormCuti, FormIzin, FormKoreksiAbsen, FormLembur } from '@/components/FormPengajuan';
 import { TautanBukti } from '@/components/BuktiPengajuan';
 import { NavigasiHalaman, type HalamanData } from '@/components/NavigasiHalaman';
 import { api } from '@/lib/klien/api';
@@ -20,6 +19,8 @@ function grupStatus(st: string) {
   return 'ditolak';
 }
 const WARNA: Record<string, string> = { menunggu: 'b-amber', disetujui: 'b-green', ditolak: 'b-red', batal: 'b-gray' };
+const JUDUL_PENGAJUAN = { lembur: 'Lembur', lupa_in: 'Lupa Clock In', lupa_out: 'Lupa Clock Out', izin_telat: 'Izin Terlambat' };
+const IKON_PENGAJUAN = { lembur: 'clock', lupa_in: 'log-in', lupa_out: 'log-out', izin_telat: 'alarm-clock' };
 
 export default function Pengajuan() {
   const { me, bukaSheet, yakin, toast, galat, muatInbox } = useAplikasi();
@@ -33,13 +34,13 @@ export default function Pengajuan() {
     Promise.all([api<Data>('cuti_saya', {}, true), api<HalamanData<Data>>('pengajuan_riwayat', { filter, search, page }, true)]).then(([c, result]) => {
       setCuti(c);
       const items: Item[] = result.items.map((x: Data) => {
-        const tipe = x.tipe, judul = tipe === 'reimburse' ? 'Reimburse · ' + x.judul : tipe === 'kasbon' ? 'Kasbon' : tipe === 'ket'
+        const tipe = x.tipe, judul = tipe === 'ket'
           ? ({ sakit: 'Sakit', izin: 'Izin', keperluan: 'Keperluan pribadi', setengah_hari: 'Izin Setengah Hari', wfh: 'Work From Home', dlk: 'Dinas Luar Kota', libur: 'Libur', lainnya: 'Lainnya' } as Data)[x.judul] || x.judul
-          : tipe === 'pengajuan' ? ({ lembur: 'Lembur', ganti_shift: 'Ganti Shift', libur: 'Libur / Pindah Libur' } as Data)[x.judul] || x.judul : x.judul;
+          : tipe === 'pengajuan' ? (JUDUL_PENGAJUAN as Data)[x.judul] || x.judul : x.judul;
         const ikon = tipe === 'cuti' ? 'plane' : tipe === 'ket' ? ({ wfh: 'house', dlk: 'map-pin', setengah_hari: 'timer' } as Data)[x.judul] || 'file-heart'
-          : tipe === 'pengajuan' ? (x.judul === 'lembur' ? 'clock' : 'repeat') : tipe === 'reimburse' ? 'receipt' : 'wallet';
+          : (IKON_PENGAJUAN as Data)[x.judul] || 'clock';
         const batal = tipe === 'cuti' ? () => api('cuti_batal', { id: x.id }) : tipe === 'ket' ? () => api('ketidakhadiran_batal', { id: x.id })
-          : tipe === 'pengajuan' ? () => api('pengajuan_batal', { id: x.id }) : tipe === 'reimburse' ? () => api('rb_batal', { id: x.id }) : () => api('ks_batal', { id: x.id });
+          : () => api('pengajuan_batal', { id: x.id });
         return { ikon, judul, waktu: x.waktu, status: x.status, ket: x.ket, catatan: x.catatan || '', diajukan: x.diajukan, buktiLink: x.buktiLink, batal };
       });
       setData({ ...result, items });
@@ -55,8 +56,9 @@ export default function Pengajuan() {
     ['WFH', 'house', <FormIzin key="w" jenis="wfh" selesai={selesai} />],
     ['Dinas Luar Kota', 'map-pin', <FormIzin key="d" jenis="dlk" selesai={selesai} />],
     ['Lembur', 'clock', <FormLembur key="l" selesai={selesai} />],
-    ['Reimburse', 'receipt', <FormReimburse key="r" selesai={selesai} />],
-    ['Kasbon', 'wallet', <FormKasbon key="k" selesai={selesai} />],
+    ['Lupa Clock In', 'log-in', <FormKoreksiAbsen key="li" jenis="lupa_in" selesai={selesai} />],
+    ['Lupa Clock Out', 'log-out', <FormKoreksiAbsen key="lo" jenis="lupa_out" selesai={selesai} />],
+    ['Izin Terlambat', 'alarm-clock', <FormKoreksiAbsen key="it" jenis="izin_telat" selesai={selesai} />],
   ];
   const batal = async (x: Item) => {
     if (!(await yakin('Batalkan pengajuan ini?'))) return;
@@ -101,7 +103,7 @@ export default function Pengajuan() {
               </div>
               {x.ket && <div className="tiny muted" style={{ marginTop: 6 }}>{x.ket}</div>}
               <TautanBukti link={x.buktiLink} />
-              {x.catatan && <div className="kv" style={{ marginTop: 4 }}><span>Catatan HC</span><span style={{ textAlign: 'right' }}>{x.catatan}</span></div>}
+              {x.catatan && <div className="kv" style={{ marginTop: 4 }}><span>Catatan atasan</span><span style={{ textAlign: 'right' }}>{x.catatan}</span></div>}
               {g === 'menunggu' && <button className="btn ghost sm auto" style={{ marginTop: 8 }} onClick={() => batal(x)}><Ikon n="x" />Batalkan</button>}
             </div>);
         })}<NavigasiHalaman page={data.page} total={data.total} totalPages={data.totalPages} ubah={setPage} /></> : <div className="empty"><Ikon n="inbox" />{filter === 'semua' ? 'Belum ada pengajuan.' : 'Tidak ada pengajuan dengan status ini.'}</div>}

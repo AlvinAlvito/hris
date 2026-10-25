@@ -4,7 +4,7 @@
    ===================================================================== */
 import { exec, nilai, q, q1, type Baris } from './db';
 import { konteks, simpanSementara } from './konteks';
-import { setg, setgInt } from './pengaturan';
+import { jadwalKerja, setgInt, type JamHari } from './pengaturan';
 import { gagal } from './http';
 import { sesi } from './sesi';
 import { detikSekarang, epoch, hariIso, tambahHari, tglWIB } from './waktu';
@@ -12,12 +12,48 @@ import { detikSekarang, epoch, hariIso, tambahHari, tglWIB } from './waktu';
 export type User = Baris;
 
 /* ---------------- peran & sesi ---------------- */
-/* Peran: 'karyawan' (Pegawai), 'admin' (HC), 'direktur' (Super Admin).
-   HC dan Super Admin memegang kendali penuh. 'atasan' & 'finance' hanya sisa data lama. */
+/* Peran: 'karyawan' (Staff), 'atasan' (Supervisor), 'admin' (HC), 'direktur' (Super Admin).
+   HC dan Super Admin memegang kendali penuh. Supervisor memutus absensi & pengajuan seluruh tim di bawahnya
+   (mengikuti atasan_id berjenjang). 'finance' hanya sisa data lama. */
 export function isAdminUp(u: User): boolean { return u.role === 'admin' || u.role === 'direktur'; }
 export function isFinance(u: User): boolean { return u.role === 'finance'; }
 export function isAtasanRole(u: User): boolean { return u.role === 'atasan'; }
 export function isAtasan(u: User): boolean { return isAtasanRole(u) || isAdminUp(u); }
+
+/* seluruh bawahan (langsung maupun tidak langsung) menurut atasan_id */
+export async function idBawahan(uid: number): Promise<number[]> {
+  const anak = new Map<number, number[]>();
+  for (const r of await q('SELECT id, atasan_id FROM users WHERE atasan_id IS NOT NULL')) {
+    if (!anak.has(r.atasan_id)) anak.set(r.atasan_id, []);
+    anak.get(r.atasan_id)!.push(r.id);
+  }
+  const hasil = new Set<number>(), antre = [...(anak.get(uid) ?? [])];
+  while (antre.length) {
+    const x = antre.shift()!;
+    if (x === uid || hasil.has(x)) continue;
+    hasil.add(x);
+    antre.push(...(anak.get(x) ?? []));
+  }
+  return [...hasil];
+}
+/* Cakupan data yang boleh dikelola: null = semua (HC / Super Admin), daftar id = tim Supervisor */
+export async function cakupanTim(u: User): Promise<number[] | null> {
+  if (isAdminUp(u)) return null;
+  if (isAtasanRole(u)) return idBawahan(u.id);
+  gagal('Anda tidak berwenang', 403);
+}
+/* potongan SQL "AND kolom IN (...)" sesuai cakupan */
+export function sqlCakupan(ids: number[] | null, kolom: string): string {
+  return ids === null ? '' : ` AND ${kolom} IN (${inList(ids)})`;
+}
+export async function pastikanDalamCakupan(u: User, pemilik: number): Promise<void> {
+  if (pemilik === u.id) gagal('Anda tidak dapat memutus milik sendiri');
+  const ids = await cakupanTim(u);
+  if (ids !== null && !ids.includes(pemilik)) gagal('Karyawan ini bukan anggota tim Anda', 403);
+}
+export function labelPenyetuju(u: User): string {
+  return `${u.nama} (${u.role === 'direktur' ? 'Super Admin' : u.role === 'admin' ? 'HC' : 'Supervisor'})`;
+}
 
 export async function me(): Promise<User | null> {
   return simpanSementara('me', async () => {
@@ -73,9 +109,11 @@ export async function idTimAtasan(atasan: User): Promise<number[]> {
 export function inList(ids: number[]): string { return ids.length ? ids.map((x) => Math.trunc(x)).join(',') : '0'; }
 
 /* ---------------- label ---------------- */
-export function labelJenis(j: string): string {
-  return j === 'ganti_shift' ? 'Ganti Shift' : j === 'libur' ? 'Libur / Pindah Libur' : 'Lembur';
-}
+const LABEL_JENIS: Record<string, string> = {
+  ganti_shift: 'Ganti Shift', libur: 'Libur / Pindah Libur', lembur: 'Lembur',
+  lupa_in: 'Lupa Clock In', lupa_out: 'Lupa Clock Out', izin_telat: 'Izin Terlambat',
+};
+export function labelJenis(j: string): string { return LABEL_JENIS[j] ?? j; }
 const LABEL_KET: Record<string, string> = {
   sakit: 'Sakit', izin: 'Izin', keperluan: 'Keperluan Pribadi', libur: 'Libur', lainnya: 'Lainnya',
   setengah_hari: 'Izin Setengah Hari', wfh: 'WFH', dlk: 'Dinas Luar Kota',
@@ -142,14 +180,21 @@ export async function liburResmi(tgl: string): Promise<Baris | null> {
   if ((await setgInt('libur_nasional_aktif', 1)) !== 1) return null;
   return (await kalenderLibur())[tgl] ?? null;
 }
-export async function hariKerjaSeminggu(): Promise<number> { return (await setgInt('hari_kerja_seminggu', 5)) === 6 ? 6 : 5; }
+/* jam kerja kantor pada satu tanggal (staf non-shift); null = libur mingguan */
+export async function jamKerjaHari(tgl: string): Promise<JamHari> { return (await jadwalKerja())[hariIso(tgl)] ?? null; }
+export async function hariLiburJadwal(): Promise<number[]> {
+  const jk = await jadwalKerja();
+  return [1, 2, 3, 4, 5, 6, 7].filter((d) => !jk[d]);
+}
+/* jumlah hari kerja seminggu (dipakai rumus lembur hari libur PP 35/2021: 5 atau 6) */
+export async function hariKerjaSeminggu(): Promise<number> { return 7 - (await hariLiburJadwal()).length >= 6 ? 6 : 5; }
 /* Jumlah hari cuti: hari kerja tanpa libur resmi; cuti melahirkan dihitung hari kalender */
 export async function hitungHari(m: string, sd: string, jenis: string): Promise<number> {
   if (sd < m) return 0;
-  const kal = jenis === 'Cuti Melahirkan', hk = await hariKerjaSeminggu();
+  const kal = jenis === 'Cuti Melahirkan', libur = await hariLiburJadwal();
   let n = 0;
   for (let t = m; t <= sd; t = tambahHari(t, 1)) {
-    if (kal || (hariIso(t) <= hk && !(await liburResmi(t)))) n++;
+    if (kal || (!libur.includes(hariIso(t)) && !(await liburResmi(t)))) n++;
   }
   return n;
 }
@@ -188,8 +233,7 @@ export function shiftPublik(sh: Baris) {
 export async function hariLiburMingguan(u: User): Promise<number[]> {
   const lh = u.libur_hari;
   if (lh === null || lh === undefined || lh === '') {
-    if ((u.jam_mode ?? 'tetap') !== 'shift' && (await setgInt('libur_minggu_nonshift', 1)) === 1)
-      return (await hariKerjaSeminggu()) === 6 ? [7] : [6, 7];
+    if ((u.jam_mode ?? 'tetap') !== 'shift' && (await setgInt('libur_minggu_nonshift', 1)) === 1) return hariLiburJadwal();
     return [];
   }
   if (String(lh).trim() === '0') return [];
@@ -260,14 +304,20 @@ export async function tandaiLupaOut(userId: number): Promise<void> {
   await exec(`UPDATE absensi SET lupa_out=1 WHERE user_id=? AND in_time IS NOT NULL AND out_time IS NULL AND lupa_out=0
     AND TIMESTAMPDIFF(HOUR, TIMESTAMP(tanggal, in_time), NOW()) > ?`, [userId, await batasJamTerbuka()]);
 }
-export async function targetMenit(u: User, sh: Baris | null): Promise<number> {
+/* target menit kerja; staf jam tetap mengikuti jam kerja hari tersebut (tanpa tanggal: hari kerja pertama) */
+export async function targetMenit(u: User, sh: Baris | null, tgl?: string): Promise<number> {
   if (u.jam_mode === 'shift') {
     if (sh) return durasiShift(sh);
     const bawaan = await shiftById(u.shift_id);
     if (bawaan) return durasiShift(bawaan);
   }
   if (u.jam_mode === 'fleksibel') return Number(u.target_menit);
-  let d = Math.round((epoch('2000-01-01', await setg('jam_pulang', '17:00')) - epoch('2000-01-01', await setg('jam_masuk', '08:00'))) / 60);
+  const jk = await jadwalKerja();
+  const j = (tgl ? jk[hariIso(tgl)] : null) ?? jk[1] ?? Object.values(jk).find(Boolean) ?? ['08:00', '17:00'];
+  return menitAntara(j[0], j[1]);
+}
+export function menitAntara(a: string, b: string): number {
+  let d = Math.round((epoch('2000-01-01', b) - epoch('2000-01-01', a)) / 60);
   if (d <= 0) d += 1440;
   return d;
 }

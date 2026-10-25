@@ -1,5 +1,5 @@
 'use client';
-/* Dashboard HC: KPI, komposisi hari ini, per lokasi, jam kerja, terlambat, payroll, reimburse, komposisi SDM, monitoring */
+/* Dashboard HC: KPI, komposisi hari ini, per lokasi, jam kerja, terlambat, payroll, komposisi SDM, monitoring */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAplikasi } from '@/components/Aplikasi';
@@ -54,13 +54,12 @@ export default function Dashboard() {
       <div className="card"><h3><Ikon n="timer" />Rata-rata Jam Kerja & Lembur per Minggu</h3><Grafik opsi={o.jam} className="chart pendek" /></div>
       <div className="card"><h3><Ikon n="clock-alert" />Paling Sering Terlambat <span className="m">bulan ini</span></h3><Grafik opsi={o.telat} kosong="Belum ada keterlambatan bulan ini" className="chart pendek" /></div>
     </div>
-    <div className="grid-2">
+    <div>
       <div className="card"><div className="page-head" style={{ margin: 0 }}><h3 style={{ margin: 0 }}><Ikon n="calculator" />Biaya Payroll <span className="m">per periode</span></h3>
         <div style={{ display: 'flex', gap: 8 }}>
           {tigaD && <button className="btn ghost sm auto" onClick={() => setPutar(!putar)}><Ikon n="repeat" />{putar ? 'Jeda putar' : 'Putar'}</button>}
           {gl && <button className="btn ghost sm auto" onClick={() => setMode3d(!mode3d)}><Ikon n="layers" />{mode3d ? 'Tampilan 2D' : 'Tampilan 3D'}</button>}
         </div></div><Grafik key={'pay' + tigaD} opsi={o.pay} gl={tigaD} kosong="Belum ada data payroll" /></div>
-      <div className="card"><h3><Ikon n="receipt" />Reimburse 90 Hari <span className="m">per kategori</span></h3><Grafik opsi={o.rb} kosong="Belum ada reimburse disetujui" /></div>
     </div>
     <div className="grid-3">
       <div className="card"><h3><Ikon n="building-2" />Per Divisi</h3><Grafik opsi={o.dept} className="chart pendek" /></div>
@@ -99,7 +98,7 @@ export default function Dashboard() {
 /* opsi grafik dihitung ulang bila data atau mode warna berubah */
 function useOpsiGrafik(g: Data | null, pay: Data | null, tigaD: boolean, putar: boolean, tema: number) {
   return useMemo(() => {
-    const kosong = { pie: null, lokasi: null, jam: null, telat: null, pay: null, rb: null, dept: null, status: null, jk: null };
+    const kosong = { pie: null, lokasi: null, jam: null, telat: null, pay: null, dept: null, status: null, jk: null };
     if (!g || typeof window === 'undefined') return kosong as Record<string, ((e: any) => any) | null>;
     void tema;
     const c = palet();
@@ -123,7 +122,6 @@ function useOpsiGrafik(g: Data | null, pay: Data | null, tigaD: boolean, putar: 
     const lok = [...g.lokasi].sort((a: Data, b: Data) => b.total - a.total).slice(0, 8);
     const per = pay?.periode ?? [], kom: [string, string, string][] = [['Take home pay', 'thp', c.p], ['PPh 21', 'pph', c.warn], ['BPJS perusahaan', 'bpjs', c.ok]];
     const lblPer = per.map((p: Data) => NAMA_BULAN[+p.periode.slice(5) - 1].slice(0, 3) + ' ' + p.periode.slice(2, 4));
-    const rb = g.reimburse;
     return {
       pie: dataPie.some((d) => d.value > 0) ? () => ({ tooltip: { trigger: 'item', ...tooltip }, series: [{ type: 'pie', radius: ['52%', '80%'],
         itemStyle: { borderRadius: 8, borderColor: c.sf, borderWidth: 3 }, label: { show: false }, data: dataPie.map((d, i) => ({ ...d, itemStyle: { color: wPie[i] } })) }] }) : null,
@@ -147,10 +145,6 @@ function useOpsiGrafik(g: Data | null, pay: Data | null, tigaD: boolean, putar: 
         series: kom.map((k, yi) => ({ type: 'bar3D', name: k[0], shading: 'lambert', bevelSize: 0.3, itemStyle: { color: k[2] }, data: per.map((p: Data, xi: number) => [xi, yi, +(p[k[1]] / 1e6).toFixed(2)]) })),
       } : { ...dasar, legend: { top: 0, textStyle: { color: c.mut } }, xAxis: { type: 'category', data: lblPer, ...sumbu }, yAxis: { type: 'value', ...sumbu },
         series: kom.map((k) => ({ type: 'bar', name: k[0], data: per.map((p: Data) => p[k[1]]), itemStyle: { color: k[2], borderRadius: [5, 5, 0, 0] } })) }) : null,
-      rb: rb.length ? () => ({ tooltip: { trigger: 'item', formatter: (p: any) => `<b>${p.name}</b><br>${rupiah(p.value)} · ${rb[p.dataIndex].n} klaim`, ...tooltip },
-        legend: { bottom: 0, textStyle: { color: c.mut }, type: 'scroll' },
-        series: [{ type: 'pie', roseType: 'area', radius: ['16%', '74%'], center: ['50%', '45%'], itemStyle: { borderRadius: 10, borderColor: c.sf, borderWidth: 2 },
-          label: { color: c.ink, formatter: (p: any) => `${p.name}\n${rupiah(p.value)}`, fontSize: 11 }, data: rb.map((r: Data, i: number) => ({ name: r.kategori, value: r.total, itemStyle: { color: W[i % W.length] } })) }] }) : null,
       dept: donat(g.dept, W, true), status: donat(g.statusKerja, W),
       jk: donat(g.jk.map((x: Data) => ({ nama: x.nama === 'L' ? 'Laki-laki' : x.nama === 'P' ? 'Perempuan' : x.nama, nilai: x.nilai })), [c.p, '#ec4899', c.mut]),
     } as Record<string, ((e: any) => any) | null>;

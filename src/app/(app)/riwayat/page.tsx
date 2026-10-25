@@ -1,9 +1,11 @@
 'use client';
+/* Riwayat absensi pegawai: ringkasan sebulan (hadir, terlambat & total menitnya, setengah hari, approval) dan rincian harian */
 import { useEffect, useState } from 'react';
 import { useAplikasi } from '@/components/Aplikasi';
 import { Ikon } from '@/components/Ikon';
 import { NavigasiHalaman, type HalamanData } from '@/components/NavigasiHalaman';
 import { useLihatFoto } from '@/components/FotoAbsen';
+import { BadgeApproval } from '@/components/BadgeApproval';
 import { api } from '@/lib/klien/api';
 import { jamKerjaTeks, km, NAMA_BULAN, tglIndo } from '@/lib/klien/format';
 
@@ -14,11 +16,11 @@ export default function Riwayat() {
   const kini = new Date();
   const [bulan, setBulan] = useState(kini.getMonth() + 1);
   const [tahun, setTahun] = useState(kini.getFullYear());
-  const [list, setList] = useState<HalamanData<Data> | null>(null);
+  const [list, setList] = useState<(HalamanData<Data> & { ringkas?: Data }) | null>(null);
   const [cari, setCari] = useState(''), [page, setPage] = useState(1);
   const lihatFoto = useLihatFoto();
-  useEffect(() => { setList(null); api<HalamanData<Data>>('riwayat', { bulan, tahun, search: cari, page }).then(setList).catch(galat); }, [bulan, tahun, cari, page, galat]);
-  const rows = list?.items ?? [];
+  useEffect(() => { setList(null); api<HalamanData<Data> & { ringkas?: Data }>('riwayat', { bulan, tahun, search: cari, page }).then(setList).catch(galat); }, [bulan, tahun, cari, page, galat]);
+  const rows = list?.items ?? [], r = list?.ringkas;
 
   return (
     <div className="sempit">
@@ -33,18 +35,29 @@ export default function Riwayat() {
       </div>
       {!list ? <div className="card"><div className="skel" style={{ height: 80 }} /></div>
         : !rows.length ? <div className="card"><div className="empty">Belum ada data absensi bulan ini.</div></div> : (<>
-          <div className="card"><div className="statgrid" style={{ marginTop: 0 }}>
-            <div className="stat"><div className="k">Total Hadir</div><div className="v">{list.total}</div></div>
-            <div className="stat"><div className="k">Terlambat (halaman ini)</div><div className="v">{rows.filter((a) => a.terlambat).length}</div></div>
-          </div></div>
+          <div className="card"><h3><Ikon n="chart-pie" />Ringkasan {NAMA_BULAN[bulan - 1]} {tahun}</h3>
+            <div className="statgrid g3" style={{ marginTop: 0 }}>
+              <div className="stat"><div className="k">Hadir</div><div className="v">{r?.hadir ?? list.total}</div></div>
+              <div className="stat"><div className="k">Terlambat</div><div className="v" style={{ color: r?.telat ? 'var(--danger)' : undefined }}>{r?.telat ?? 0}×</div></div>
+              <div className="stat"><div className="k">Total menit telat</div><div className="v" style={{ color: r?.menitTelat ? 'var(--danger)' : undefined }}>{jamKerjaTeks(r?.menitTelat ?? 0)}</div></div>
+              <div className="stat"><div className="k">Setengah hari</div><div className="v" style={{ color: r?.setengah ? 'var(--warning)' : undefined }}>{r?.setengah ?? 0}</div></div>
+              <div className="stat"><div className="k">Menunggu approval</div><div className="v">{r?.menunggu ?? 0}</div></div>
+              <div className="stat"><div className="k">Ditolak atasan</div><div className="v" style={{ color: r?.ditolak ? 'var(--danger)' : undefined }}>{r?.ditolak ?? 0}</div></div>
+            </div>
+            {!!r?.setengah && <div className="tiny muted" style={{ marginTop: 8 }}>Setengah hari = jam kerja kurang dari separuh target tanpa izin setengah hari yang disetujui; gaji dipotong ½ hari. Ajukan <b>Izin Setengah Hari</b> agar tidak dipotong.</div>}
+          </div>
           {rows.map((a) => (
             <div key={a.id} className="item">
               <div className="top">
                 <div><div className="nm">{tglIndo(a.tanggal)}</div><div className="dt">{a.inTime || '--:--'} → {a.outTime || '--:--'}{a.durasi && ' · ' + a.durasi}</div></div>
                 {a.jamMode === 'fleksibel' ? <span className="badge b-green">Fleksibel</span>
-                  : a.terlambat ? <span className="badge b-red">Telat {a.menitTelat}m</span> : <span className="badge b-green">Tepat waktu</span>}
+                  : a.terlambat ? <span className={'badge ' + (a.telatDiizinkan ? 'b-amber' : 'b-red')}>Telat {a.menitTelat} menit{a.telatDiizinkan && ' · diizinkan'}</span>
+                    : <span className="badge b-green">Tepat waktu</span>}
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                <BadgeApproval a={a} />
+                {a.setengahHari && <span className="badge b-red">Setengah hari tanpa izin</span>}
+                {a.jadwalIn && <span className="badge b-gray">Jadwal {a.jadwalIn}–{a.jadwalOut}</span>}
                 {a.kerjaDari && <span className="badge b-blue">{a.kerjaDari === 'wfh' ? 'WFH' : 'Dinas luar kota'}</span>}
                 {a.izinSesi && <span className="badge b-amber">Izin ½ hari {a.izinSesi}</span>}
                 {a.shiftNama && a.jamMode === 'shift' && <span className="badge b-blue">{a.shiftNama}</span>}
@@ -54,7 +67,8 @@ export default function Riwayat() {
                 {a.lupaOut && <span className="badge b-red">Lupa clock out</span>}
                 {a.dikoreksi && <span className="badge b-amber">Dikoreksi {a.koreksiOleh}</span>}
               </div>
-              {a.dikoreksi && a.koreksiCatatan && <div className="tiny muted" style={{ marginTop: 4 }}>Catatan HC: {a.koreksiCatatan}</div>}
+              {a.dikoreksi && a.koreksiCatatan && <div className="tiny muted" style={{ marginTop: 4 }}>Catatan koreksi: {a.koreksiCatatan}</div>}
+              {a.approval === 'ditolak' && <div className="tiny" style={{ color: 'var(--danger)', marginTop: 4 }}>Ditolak {a.approvalOleh}{a.approvalCatatan && ': ' + a.approvalCatatan} — dihitung tidak hadir</div>}
               {a.mode === 'lapangan' && <div className="tiny" style={{ color: 'var(--purple)', marginTop: 4 }}>Lapangan · {km(a.inJarakBase || 0)} dari {a.baseLabel || 'titik awal'}</div>}
               {(a.inLuar || a.outLuar) && <div className="tiny" style={{ color: 'var(--warning)', marginTop: 4 }}>Absen di luar area kantor</div>}
               <div className="row" style={{ marginTop: 8 }}>
@@ -68,3 +82,4 @@ export default function Riwayat() {
     </div>
   );
 }
+

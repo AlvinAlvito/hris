@@ -34,7 +34,7 @@ export default function Profil() {
     } catch (e) { galat(e); }
   };
   const pola = !u ? '' : u.jamMode === 'shift' ? 'Shift' + (u.shiftNama ? ' — bawaan ' + u.shiftNama : '')
-    : u.jamMode === 'fleksibel' ? `Fleksibel — target ${u.targetMenit / 60} jam/hari` : `Tetap (${settings.jamMasuk}–${settings.jamPulang})`;
+    : u.jamMode === 'fleksibel' ? `Fleksibel — target ${u.targetMenit / 60} jam/hari` : 'Tetap — jam kerja per hari sesuai Pengaturan kantor';
   const modeAbsen = !u ? '' : u.lokasiMode === 'lapangan' ? `Lapangan (min ${String(u.minJarakKm).replace('.', ',')} km dari titik awal)`
     : u.lokasiMode === 'kantor' ? 'Kantor (dalam radius lokasi kerja)' : 'Bebas';
   const bdg = { background: 'rgba(255,255,255,.2)', color: '#fff' };
