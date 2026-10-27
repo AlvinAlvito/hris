@@ -47,7 +47,7 @@ export default function CutiHC() {
             <div className="dt">{c.jenis} · {tglPendek(c.mulai)} – {tglPendek(c.selesai)} · <b>{c.hari} hari</b></div></div>
             <span className={'badge ' + (WARNA[c.status] ?? 'b-gray')}>{c.status}</span></div>
           <div className="sep" style={{ margin: '8px 0' }} />
-          <div className="kv"><span>Alasan</span><span style={{ textAlign: 'right' }}>{c.alasan}</span></div>
+          <div className="kv"><span>Alasan</span><span style={{ textAlign: 'right' }}>{c.alasan || '-'}</span></div>
           <TautanBukti link={c.buktiLink} />
           {c.sisaPemohon != null && <div className="kv"><span>Sisa cuti tahunan</span><span><b>{c.sisaPemohon} hari</b></span></div>}
           <div className="kv"><span>Diajukan</span><span>{tglPendek(c.tglAjukan)}</span></div>

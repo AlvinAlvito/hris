@@ -22,6 +22,7 @@ export function FormIzin({ jenis, selesai }: { jenis: 'izin' | 'setengah_hari' |
   const [kirim, setKirim] = useState(false);
   const setengah = jenis === 'setengah_hari';
   const ajukan = async () => {
+    if (!alasan.trim()) { toast(jenis === 'dlk' ? 'Tuliskan kota tujuan & keperluan dinas' : jenis === 'wfh' ? 'Tuliskan tugas / laporan pekerjaan selama WFH' : 'Keterangan wajib diisi', true); return; }
     setKirim(true);
     try {
       const d: Record<string, any> = { jenis: jenis === 'izin' ? jenisIzin : jenis, tanggal: mulai, alasan: alasan.trim(), buktiLink: buktiLink.trim(), buktiFile: await dataBukti(buktiFile) };
@@ -61,9 +62,9 @@ export function FormIzin({ jenis, selesai }: { jenis: 'izin' | 'setengah_hari' |
           </div>
         </>
       )}
-      <label>{jenis === 'dlk' ? 'Kota tujuan & keperluan' : 'Keterangan'}</label>
+      <label>{jenis === 'dlk' ? 'Kota tujuan & keperluan' : jenis === 'wfh' ? 'Tugas / laporan pekerjaan' : 'Keterangan'} <span className="tiny" style={{ color: 'var(--danger)' }}>(wajib)</span></label>
       <textarea value={alasan} onChange={(e) => setAlasan(e.target.value)}
-        placeholder={jenis === 'dlk' ? 'mis. Medan — persiapan OSN tingkat provinsi' : jenis === 'wfh' ? 'mis. menyelesaikan laporan' : 'mis. demam, kontrol ke dokter'} />
+        placeholder={jenis === 'dlk' ? 'mis. Medan — persiapan OSN tingkat provinsi' : jenis === 'wfh' ? 'mis. menyusun laporan OSN, rapat daring dengan tim Sales' : setengah ? 'mis. mengurus dokumen di kantor kelurahan' : 'mis. demam, kontrol ke dokter'} />
       <InputBuktiPengajuan link={buktiLink} setLink={setBuktiLink} file={buktiFile} setFile={setBuktiFile} />
       <button className="btn" disabled={kirim} onClick={ajukan}><Ikon n="send" />Kirim ke Atasan</button>
       <button className="btn ghost" onClick={tutupSheet}>Batal</button>
@@ -128,8 +129,8 @@ export function FormCuti({ selesai }: { selesai: Selesai }) {
           ? <><br />Memotong saldo cuti tahunan. Sisa tersedia: <b>{sisa} hari</b>{hari > sisa && <><br /><span style={{ color: 'var(--danger)' }}>Melebihi sisa cuti</span></>}</>
           : <><br />Tidak memotong saldo cuti tahunan.</>}
       </div>
-      <label>Alasan / keterangan</label>
-      <textarea value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="Contoh: keperluan keluarga" />
+      <label>Alasan / keterangan <span className="tiny muted">(opsional)</span></label>
+      <textarea value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="Boleh dikosongkan" />
       <InputBuktiPengajuan link={buktiLink} setLink={setBuktiLink} file={buktiFile} setFile={setBuktiFile} />
       <div className="row">
         <button className="btn ghost sm" onClick={tutupSheet}>Batal</button>
@@ -186,7 +187,9 @@ export function FormKoreksiAbsen({ jenis, selesai }: { jenis: 'lupa_in' | 'lupa_
   const [alasan, setAlasan] = useState('');
   const [buktiLink, setBuktiLink] = useState(''), [buktiFile, setBuktiFile] = useState<File | null>(null);
   const [kirim, setKirim] = useState(false);
+  const wajib = jenis !== 'lupa_out';   // lupa clock out: alasan opsional
   const ajukan = async () => {
+    if (wajib && !alasan.trim()) { toast('Alasan wajib diisi', true); return; }
     setKirim(true);
     try {
       const r = await api<{ pesan: string }>('pengajuan_ajukan', { jenis, tanggal: tgl, jam, alasan: alasan.trim(), buktiLink: buktiLink.trim(), buktiFile: await dataBukti(buktiFile) });
@@ -201,8 +204,8 @@ export function FormKoreksiAbsen({ jenis, selesai }: { jenis: 'lupa_in' | 'lupa_
         <div><label>{k.label}</label><input type="time" value={jam} onChange={(e) => setJam(e.target.value)} /></div>
       </div>
       <div className="tiny muted" style={{ marginTop: 6 }}>{k.ket}</div>
-      <label>Alasan</label>
-      <textarea value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder={k.contoh} />
+      <label>Alasan {wajib ? <span className="tiny" style={{ color: 'var(--danger)' }}>(wajib)</span> : <span className="tiny muted">(opsional)</span>}</label>
+      <textarea value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder={wajib ? k.contoh : 'Boleh dikosongkan'} />
       <InputBuktiPengajuan link={buktiLink} setLink={setBuktiLink} file={buktiFile} setFile={setBuktiFile} />
       <button className="btn" disabled={kirim} onClick={ajukan}><Ikon n="send" />Kirim ke Atasan</button>
       <button className="btn ghost" onClick={tutupSheet}>Batal</button>

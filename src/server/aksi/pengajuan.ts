@@ -28,7 +28,7 @@ export const aksiPengajuan: KumpulanAksi = {
     validasiLinkBukti(m);
     if (!['Cuti Tahunan', 'Sakit', 'Izin', 'Cuti Melahirkan', 'Cuti Penting'].includes(jenis)) gagal('Jenis cuti tidak sah');
     if (!POLA_TGL.test(mulai) || !POLA_TGL.test(selesai)) gagal('Tanggal tidak sah');
-    if (alasan === '') gagal('Alasan wajib diisi');
+    // alasan cuti opsional
     const hari = await hitungHari(mulai, selesai, jenis);
     if (hari <= 0) gagal('Rentang tanggal tidak valid');
     if (jenis === 'Cuti Tahunan') {
@@ -69,8 +69,10 @@ export const aksiPengajuan: KumpulanAksi = {
       if (sesiIzin !== 'pagi' && sesiIzin !== 'siang') gagal('Pilih sesi pagi atau siang');
     }
     const alasan = s(m, 'alasan');
-    if (alasan === '' && (jenis === 'lainnya' || jenis === 'dlk'))
-      gagal(jenis === 'dlk' ? 'Tuliskan kota tujuan dan keperluan dinas' : 'Untuk jenis "Lainnya", alasan wajib diisi');
+    // keterangan wajib untuk semua jenis kecuali libur
+    if (alasan === '' && jenis !== 'libur')
+      gagal(jenis === 'dlk' ? 'Tuliskan kota tujuan dan keperluan dinas'
+        : jenis === 'wfh' ? 'Tuliskan tugas / laporan pekerjaan selama WFH' : 'Keterangan wajib diisi');
     const hariIni = tglWIB();
     if (tgl < tambahHari(hariIni, -30)) gagal('Pengajuan hanya bisa untuk 30 hari terakhir');
     if (sampai > tambahHari(hariIni, 60)) gagal('Pengajuan paling jauh 60 hari ke depan');
@@ -127,7 +129,7 @@ export const aksiPengajuan: KumpulanAksi = {
     const tgl = s(m, 'tanggal');
     if (!POLA_TGL.test(tgl)) gagal('Tanggal tidak sah');
     const alasan = s(m, 'alasan');
-    if (alasan === '') gagal('Alasan wajib diisi');
+    if (alasan === '' && jenis !== 'lupa_out') gagal('Alasan wajib diisi');   // lupa clock out: alasan opsional
     const hariIni = tglWIB();
     if (tgl < tambahHari(hariIni, -7)) gagal('Pengajuan hanya bisa untuk 7 hari terakhir');
 

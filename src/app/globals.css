@@ -835,7 +835,27 @@ td.r,th.r{text-align:right}
 .ot-zoom button{border:0;background:transparent;color:var(--ink);width:32px;height:34px;font:700 16px var(--font);cursor:pointer}
 .ot-zoom button:hover{background:var(--sky-soft);color:var(--primary)}
 .ot-zoom span{min-width:46px;text-align:center;font-size:12px;font-weight:700;color:var(--ink-2)}
+.ot-zoom .ot-pas{border-left:1px solid var(--line)}
+.ot-zoom .ot-pas .ik{width:15px;height:15px;vertical-align:-2px}
 @media (max-width:640px){.ot-kanvas{padding:18px 12px 32px;max-height:calc(100dvh - 300px)}.ot-kartu{width:196px}.ot-cab{padding-left:5px;padding-right:5px}}
+/* salinan bagan untuk PDF: di luar layar, selalu tema terang, semua cabang terbuka, nama & jabatan tidak dipotong */
+.ot-cetak{position:fixed;left:-100000px;top:0;width:max-content;padding:44px 48px 52px;pointer-events:none;
+  --primary:#1b4f94; --primary-2:#0e2a55; --accent:#3aa0e6; --sky-soft:#e8f3fd;
+  --bg:#ffffff; --surface:#ffffff; --surface-2:#f6f9fd; --surface-3:#eaf1f9;
+  --line:#dbe4f0; --line-2:#b9c9de; --ink:#0d1f3c; --ink-2:#34496a; --muted:#5d7290;
+  --success:#0f9d6b; --danger:#e03a3a; --warning:#c98204; --info:#2b86d6; color-scheme:light;
+  background:#fff;color:var(--ink);font-family:var(--font)}
+.ot-cetak .ot-isi{min-width:0}
+.ot-cetak-kepala{display:flex;justify-content:space-between;align-items:flex-end;gap:40px;padding-bottom:18px;margin-bottom:34px;border-bottom:3px solid var(--navy)}
+.ot-cetak-judul{font-size:30px;font-weight:800;color:var(--navy);letter-spacing:-.02em;line-height:1.1}
+.ot-cetak-sub{font-size:15px;font-weight:600;color:var(--ink-2);margin-top:4px}
+.ot-cetak-tgl{font-size:13px;color:var(--muted);text-align:right;line-height:1.5}
+.ot-cetak .ot-tog,.ot-cetak .ot-anda{display:none}
+.ot-cetak .ot-kartu{box-shadow:0 2px 6px rgba(14,42,85,.08);transition:none}
+.ot-cetak .ot-nama{white-space:normal;overflow:visible}
+.ot-cetak .ot-jab{display:block;-webkit-line-clamp:unset;overflow:visible}
+.ot-cetak .ot-anak{padding-top:28px}
+.ot-cetak .ot-anak:not(.tumpuk)::before{height:28px}
 
 /* penanda posisi pengguna yang sedang masuk */
 .ot-kartu.saya,.ok-kartu.saya{border-color:var(--sky);box-shadow:0 0 0 3px var(--ring),0 14px 30px -18px var(--primary)}

@@ -1,6 +1,6 @@
 'use client';
 /* Struktur organisasi: bagan kartu bertingkat (semua pengguna) dan master unit organisasi & jabatan (HC / Super Admin). */
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as PE } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as PE } from 'react';
 import { isAdminUp, useAplikasi } from '@/components/Aplikasi';
 import { DaftarJabatan, DaftarUnit, type DataOrganisasi } from '@/components/MasterOrganisasi';
 import { Avatar } from '@/components/Avatar';
@@ -36,12 +36,15 @@ function warnaDivisi(dept?: string) {
   return `hsl(${h} 70% 55%)`;
 }
 const hitungTotal = (n: Simpul): number => (n.total = n.children.reduce((a, c) => a + 1 + hitungTotal(c), 0));
+const ZOOM_MIN = 0.3, ZOOM_MAKS = 2;
+const batasZoom = (z: number) => Math.min(ZOOM_MAKS, Math.max(ZOOM_MIN, z));
 
 /* Bagan organisasi dari atas ke bawah: pimpinan di atas, bawahan berjajar di bawahnya dengan garis penghubung.
    Tim yang seluruhnya staf (tanpa bawahan) ditumpuk ke bawah agar bagan tidak terlalu melebar.
-   Awalnya terbuka sampai kepala divisi; cabang lain dibuka sesuai kebutuhan. Bisa digeser (seret) & di-zoom. */
+   Awalnya terbuka sampai kepala divisi; cabang lain dibuka sesuai kebutuhan.
+   Bisa digeser (seret) & di-zoom: cubit dua jari (HP), Ctrl + scroll / pinch trackpad (desktop), atau tombol. */
 function BaganOrganisasi() {
-  const { me, settings, galat } = useAplikasi();
+  const { me, settings, galat, toast } = useAplikasi();
   const [rows, setRows] = useState<Baris[] | null>(null);
   const [cari, setCari] = useState('');
   const [terbuka, setTerbuka] = useState<Set<number> | null>(null);
@@ -100,20 +103,137 @@ function BaganOrganisasi() {
   }, [akar, cocokSendiri]);
   const ubah = (id: number) => { const b = new Set(buka); if (b.has(id)) b.delete(id); else b.add(id); setTerbuka(b); };
 
-  // geser kanvas dengan seret (mouse / sentuh), kecuali saat menekan tombol
+  /* zoom berjangkar: titik di bawah kursor / tengah dua jari tetap di tempatnya.
+     Perubahan dikumpulkan per frame (requestAnimationFrame) agar halus saat dicubit / di-scroll cepat. */
+  const zoomRef = useRef(1), jangkar = useRef<{ ax: number; ay: number; px: number; py: number; z0: number } | null>(null), frame = useRef(0);
+  const target = useRef<{ z: number; cx?: number; cy?: number } | null>(null);
+  const zoomKe = useCallback((zBaru: number, cx?: number, cy?: number) => {
+    target.current = { z: batasZoom(zBaru), cx, cy };
+    if (frame.current) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0;
+      const k = kanvas.current, t = target.current;
+      if (!k || !t || Math.abs(t.z - zoomRef.current) < 0.001) return;
+      const r = k.getBoundingClientRect();
+      const px = (t.cx ?? r.left + k.clientWidth / 2) - r.left, py = (t.cy ?? r.top + k.clientHeight / 2) - r.top;
+      jangkar.current = { ax: k.scrollLeft + px, ay: k.scrollTop + py, px, py, z0: zoomRef.current };
+      zoomRef.current = t.z;
+      setZoom(t.z);
+    });
+  }, []);
+  useLayoutEffect(() => {
+    const k = kanvas.current, j = jangkar.current;
+    if (!k || !j) return;
+    jangkar.current = null;
+    const gaya = getComputedStyle(k), pl = parseFloat(gaya.paddingLeft) || 0, pt = parseFloat(gaya.paddingTop) || 0, rasio = zoom / j.z0;
+    k.scrollLeft = (j.ax - pl) * rasio + pl - j.px;
+    k.scrollTop = (j.ay - pt) * rasio + pt - j.py;
+  }, [zoom]);
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+
+  // Ctrl + scroll mouse, pinch trackpad (Chrome/Edge/Firefox mengirim wheel + ctrlKey), gesture trackpad Safari
+  useEffect(() => {
+    const k = kanvas.current;
+    if (!k) return;
+    const roda = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();   // cegah zoom seluruh halaman browser
+      const d = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      zoomKe((target.current?.z ?? zoomRef.current) * Math.exp(-d * 0.0022), e.clientX, e.clientY);
+    };
+    let gz = 1;
+    const gMulai = (e: Event) => { e.preventDefault(); gz = zoomRef.current; };
+    const gUbah = (e: Event) => { e.preventDefault(); const g = e as Event & { scale: number; clientX: number; clientY: number }; zoomKe(gz * g.scale, g.clientX, g.clientY); };
+    k.addEventListener('wheel', roda, { passive: false });
+    k.addEventListener('gesturestart', gMulai);
+    k.addEventListener('gesturechange', gUbah);
+    return () => { k.removeEventListener('wheel', roda); k.removeEventListener('gesturestart', gMulai); k.removeEventListener('gesturechange', gUbah); };
+  }, [akar, rows, tampilan, zoomKe]);
+
+  // geser dengan seret (mouse / satu jari), zoom dengan cubit dua jari
+  const jari = useRef(new Map<number, { x: number; y: number }>());
+  const cubit = useRef<{ d: number; z: number } | null>(null);
+  const jarak = () => { const [a, b] = [...jari.current.values()]; return { d: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; };
   const mulai = (e: PE<HTMLDivElement>) => {
-    if ((e.target as HTMLElement).closest('button') || !kanvas.current) return;
+    if (!kanvas.current) return;
+    jari.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (jari.current.size === 2) {
+      seret.current = null;   // jari kedua: berhenti menggeser, mulai mencubit
+      cubit.current = { d: Math.max(1, jarak().d), z: zoomRef.current };
+      kanvas.current.setPointerCapture(e.pointerId);
+      return;
+    }
+    if (jari.current.size > 2 || (e.target as HTMLElement).closest('button')) return;
     seret.current = { x: e.clientX, y: e.clientY, l: kanvas.current.scrollLeft, t: kanvas.current.scrollTop };
     kanvas.current.setPointerCapture(e.pointerId);
     kanvas.current.classList.add('geser');
   };
   const gerak = (e: PE<HTMLDivElement>) => {
+    if (jari.current.has(e.pointerId)) jari.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (cubit.current && jari.current.size >= 2) {
+      const j = jarak();
+      zoomKe(cubit.current.z * (j.d / cubit.current.d), j.x, j.y);
+      return;
+    }
     const s = seret.current;
     if (!s || !kanvas.current) return;
     kanvas.current.scrollLeft = s.l - (e.clientX - s.x);
     kanvas.current.scrollTop = s.t - (e.clientY - s.y);
   };
-  const selesai = () => { seret.current = null; kanvas.current?.classList.remove('geser'); };
+  const selesai = (e: PE<HTMLDivElement>) => {
+    jari.current.delete(e.pointerId);
+    if (jari.current.size < 2) cubit.current = null;
+    seret.current = null;   // setelah mencubit, angkat semua jari dulu sebelum menggeser lagi
+    kanvas.current?.classList.remove('geser');
+  };
+  // perkecil agar seluruh bagan yang sedang terbuka muat di layar
+  const pasLayar = () => {
+    const k = kanvas.current, isi = k?.firstElementChild as HTMLElement | null;
+    if (!k || !isi) return;
+    const gaya = getComputedStyle(k);
+    const ruangL = k.clientWidth - parseFloat(gaya.paddingLeft) - parseFloat(gaya.paddingRight);
+    const ruangT = k.clientHeight - parseFloat(gaya.paddingTop) - parseFloat(gaya.paddingBottom);
+    const r = isi.getBoundingClientRect(), z0 = zoomRef.current;
+    // lebar asli = isi kartu (bukan min-width 100%)
+    const lebar = Math.max(...[...isi.querySelectorAll<HTMLElement>(':scope > .ot-simpul')].map((x) => x.getBoundingClientRect().width), 1) / z0;
+    const z1 = batasZoom(Math.min(1, ruangL / lebar, ruangT / (r.height / z0)));
+    zoomRef.current = z1; setZoom(z1);
+    requestAnimationFrame(() => { k.scrollLeft = Math.max(0, (k.scrollWidth - k.clientWidth) / 2); k.scrollTop = 0; });
+  };
+
+  // unduh PDF: bagan dirender ulang di luar layar dalam keadaan terbuka semua & tema terang, lalu difoto
+  const [ekspor, setEkspor] = useState(false);
+  const wadahEkspor = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!ekspor) return;
+    let batal = false;
+    (async () => {
+      try {
+        const el = wadahEkspor.current;
+        if (!el) throw new Error('Bagan belum siap');
+        await document.fonts.ready;
+        // tunggu foto profil termuat (maks. 4 detik; foto yang gagal tetap tampil sebagai kotak kosong, tidak menggagalkan unduhan)
+        await Promise.all([...el.querySelectorAll('img')].map((g) => { g.loading = 'eager'; return g.complete ? null : Promise.race([g.decode().catch(() => null), new Promise((s) => setTimeout(s, 4000))]); }));
+        const [{ toCanvas }, { pdfDariJpeg }] = await Promise.all([import('html-to-image'), import('@/lib/klien/pdfGambar')]);
+        const w = el.scrollWidth, h = el.scrollHeight;
+        // ketajaman 2.5×, dibatasi agar tetap aman: HP (batas kanvas iOS ±16 juta piksel) lebih ketat daripada desktop
+        const hp = matchMedia('(pointer:coarse)').matches;
+        const rasio = Math.max(1, Math.min(2.5, Math.sqrt((hp ? 16e6 : 45e6) / (w * h)), (hp ? 16000 : 30000) / Math.max(w, h)));
+        const kanvasGambar = await toCanvas(el, { pixelRatio: rasio, width: w, height: h, backgroundColor: '#ffffff', cacheBust: true,
+          style: { position: 'static', left: '0', top: '0', transform: 'none' } });
+        const jpeg = await new Promise<Blob>((ok, gagal) => kanvasGambar.toBlob((b) => (b ? ok(b) : gagal(new Error('Gagal membuat gambar'))), 'image/jpeg', 0.94));
+        const pdf = await pdfDariJpeg(jpeg, kanvasGambar.width, kanvasGambar.height, w * 0.75, h * 0.75, `Struktur Organisasi ${settings.perusahaan}`);
+        if (batal) return;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(pdf);
+        a.download = `struktur-organisasi-${new Date().toISOString().slice(0, 10)}.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+        toast('PDF struktur organisasi diunduh');
+      } catch (e) { galat(e); } finally { if (!batal) setEkspor(false); }
+    })();
+    return () => { batal = true; };
+  }, [ekspor, galat, toast, settings.perusahaan]);
   // bagan lebih lebar dari layar: gulir ke tengah agar pimpinan puncak langsung terlihat
   const sudahTengah = useRef(false);
   useEffect(() => {
@@ -123,11 +243,11 @@ function BaganOrganisasi() {
     requestAnimationFrame(() => { k.scrollLeft = Math.max(0, (k.scrollWidth - k.clientWidth) / 2); });
   }, [akar, tampilan]);
   useEffect(() => { if (tampilan !== 'bagan') sudahTengah.current = false; }, [tampilan]);
-  const z = (d: number) => setZoom((x) => Math.min(1.3, Math.max(0.5, Math.round((x + d) * 10) / 10)));
+  const z = (f: number) => zoomKe(zoomRef.current * f);
 
   return (<>
     <div className="page-head org-head"><div><h2 style={{ margin: 0 }}>Struktur Organisasi</h2>
-      <div className="muted small">{rows ? `${rows.length} karyawan · ` : ''}{tampilan === 'bagan' ? 'klik angka bawahan untuk membuka cabang, seret untuk menggeser bagan.' : 'dikelompokkan per divisi, pimpinan tim di urutan pertama.'}</div></div>
+      <div className="muted small">{rows ? `${rows.length} karyawan · ` : ''}{tampilan === 'bagan' ? 'klik angka bawahan untuk membuka cabang, seret untuk menggeser, cubit layar / Ctrl + scroll untuk memperbesar.' : 'dikelompokkan per divisi, pimpinan tim di urutan pertama.'}</div></div>
       <div className="org-tools">
         <div className="seg ot-mode" role="tablist" aria-label="Tampilan struktur">
           <button type="button" role="tab" aria-selected={tampilan === 'bagan'} className={tampilan === 'bagan' ? 'on' : ''} onClick={() => setTampilan('bagan')}><Ikon n="network" />Bagan</button>
@@ -139,8 +259,11 @@ function BaganOrganisasi() {
           <button className="btn sm ghost auto" disabled={!!q} onClick={() => setTerbuka(new Set(semuaId))}><Ikon n="chevron-down" />Buka semua</button>
           <button className="btn sm ghost auto" disabled={!!q} onClick={() => setTerbuka(new Set())}><Ikon n="chevron-up" />Ringkas</button>
           <div className="ot-zoom" role="group" aria-label="Perbesaran bagan">
-            <button type="button" onClick={() => z(-0.1)} aria-label="Perkecil">−</button><span>{Math.round(zoom * 100)}%</span>
-            <button type="button" onClick={() => z(0.1)} aria-label="Perbesar">+</button></div></>}
+            <button type="button" onClick={() => z(1 / 1.2)} aria-label="Perkecil">−</button><span>{Math.round(zoom * 100)}%</span>
+            <button type="button" onClick={() => z(1.2)} aria-label="Perbesar">+</button>
+            <button type="button" className="ot-pas" onClick={pasLayar} aria-label="Pas layar" title="Pas layar"><Ikon n="maximize" /></button></div></>}
+        <button className="btn sm auto" disabled={!akar || !rows?.length || ekspor} onClick={() => setEkspor(true)}>
+          {ekspor ? <><span className="spin" />Menyiapkan PDF…</> : <><Ikon n="download" />Unduh PDF</>}</button>
       </div></div>
     {q && tampilan === 'bagan' && <div className="note" style={{ marginBottom: 10 }}>{jumlahCocok
       ? <><b>{jumlahCocok}</b> karyawan cocok dengan “{cari.trim()}” — cabangnya dibuka otomatis dan disorot.</>
@@ -153,6 +276,14 @@ function BaganOrganisasi() {
             <div className="ot-isi" style={{ zoom }}><Cabang n={akar} akar q={q} buka={buka} ubah={ubah} cocok={cocok} cocokSendiri={cocokSendiri} saya={me?.id} /></div>
           </div>}
     </div>}
+    {ekspor && akar && (
+      <div className="ot-cetak" data-mode="terang" ref={wadahEkspor} aria-hidden>
+        <div className="ot-cetak-kepala">
+          <div><div className="ot-cetak-judul">Struktur Organisasi</div><div className="ot-cetak-sub">{settings.perusahaan}</div></div>
+          <div className="ot-cetak-tgl">Per {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}<br />{rows?.length ?? 0} karyawan</div>
+        </div>
+        <div className="ot-isi"><Cabang n={akar} akar q="" buka={new Set(semuaId)} ubah={() => {}} cocok={() => false} cocokSendiri={() => false} /></div>
+      </div>)}
   </>);
 }
 
