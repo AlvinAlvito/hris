@@ -83,7 +83,7 @@ function PanelNotif({ n: awal }: { n: NilaiNotif }) {
   const bersihkan = () => api<{ pesan: string }>('notif_hapus_semua', {}, true).then((r) => { toast(r.pesan); segarkan(); }).catch(galat);
   return (<>
     <div className="page-head" style={{ margin: 0 }}><h3 style={{ margin: 0 }}><Ikon n="bell" />Notifikasi</h3>
-      <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+      <div className="nf-aksi">
         <button className="btn ghost sm auto" disabled={!n.belum} onClick={bacaSemua}><Ikon n="check-check" />Tandai dibaca</button>
         <button className="btn ghost sm auto" title="Hapus yang sudah dibaca" aria-label="Hapus notifikasi yang sudah dibaca" onClick={bersihkan}><Ikon n="trash-2" /></button></div></div>
     <KartuIzinNotif ringkas nilai={awal} />

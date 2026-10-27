@@ -116,13 +116,15 @@ function JamKerja() {
 function KebijakanAbsen() {
   const { settings: s } = useAplikasi();
   const simpan = useSimpan();
-  const [v, setV] = useState<Data>({ jatah_default: s.jatahDefault, min_jarak_default: s.minJarakDefault, wajib_foto: s.wajibFoto,
+  const [v, setV] = useState<Data>({ tanggal_mulai_hris: s.tanggalMulaiHris || '', jatah_default: s.jatahDefault, min_jarak_default: s.minJarakDefault, wajib_foto: s.wajibFoto,
     libur_nasional_aktif: s.liburNasionalAktif, titik_awal_oleh_admin: s.titikAwalOlehAdmin });
   const set = (k: string) => (e: { target: { value: string } }) => setV((x) => ({ ...x, [k]: e.target.value }));
   const sak = (k: string) => (b: boolean) => setV((x) => ({ ...x, [k]: b }));
   return (
     <div className="card"><h3><Ikon n="sliders-horizontal" />Kebijakan Absen & Cuti</h3>
-      <label style={{ marginTop: 0 }}>Jatah cuti default (hari/tahun)</label><input type="number" min={0} max={60} value={v.jatah_default} onChange={set('jatah_default')} />
+      <label style={{ marginTop: 0 }}>Tanggal mulai pemakaian HRIS</label><input type="date" value={v.tanggal_mulai_hris} onChange={set('tanggal_mulai_hris')} />
+      <div className="tiny muted" style={{ marginTop: 4 }}>Hari sebelum tanggal ini tidak dihitung hadir maupun mangkir — di dashboard, rekap, payroll, dan AI Asisten. Isi dengan tanggal karyawan mulai absen lewat aplikasi ini.</div>
+      <label>Jatah cuti default (hari/tahun)</label><input type="number" min={0} max={60} value={v.jatah_default} onChange={set('jatah_default')} />
       <label>Jarak minimum default mode lapangan (km)</label><input type="number" step="0.1" value={v.min_jarak_default} onChange={set('min_jarak_default')} />
       <Saklar on={!!v.wajib_foto} set={sak('wajib_foto')} judul="Wajib foto saat absen" ket="Foto hanya dari kamera langsung" />
       <Saklar on={!!v.libur_nasional_aktif} set={sak('libur_nasional_aktif')} judul="Libur nasional & cuti bersama" ket="Hari di Kalender Libur tidak dihitung hari kerja" />

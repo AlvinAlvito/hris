@@ -296,6 +296,11 @@ export const aksiAdmin: KumpulanAksi = {
       'libur_nasional_aktif', 'batas_jam_terbuka', 'lembur_min_menit', 'target_menit_default'];
     for (const k of ['jam_masuk', 'jam_pulang']) if (k in m && !POLA_JAM.test(String(m[k]))) gagal('Format jam tidak sah (JJ:MM)');
     for (const k of kunci) if (k in m) await setSetting(k, typeof m[k] === 'boolean' ? (m[k] ? 1 : 0) : String(m[k] ?? ''));
+    if ('tanggal_mulai_hris' in m) {
+      const t = String(m.tanggal_mulai_hris ?? '').trim();
+      if (t !== '' && !POLA_TGL.test(t)) gagal('Tanggal mulai HRIS tidak sah');
+      await setSetting('tanggal_mulai_hris', t);
+    }
     if ('jadwal_kerja' in m) {
       const jk = jadwalKerjaSah(m.jadwal_kerja);
       if (!jk) gagal('Jam kerja tidak sah: isi jam masuk & pulang (JJ:MM) dengan jam pulang setelah jam masuk');

@@ -97,3 +97,22 @@ export async function perbarui(tabel: string, data: Baris, id: number): Promise<
   if (!k.length) return;
   await exec(`UPDATE ${tabel} SET ${k.map((x) => `${x}=:${x}`).join(',')} WHERE id=:__id`, { ...data, __id: id });
 }
+
+/* Kueri baca-saja untuk AI Asisten: koneksi tersendiri, transaksi READ ONLY (database menolak perintah tulis),
+   batas waktu eksekusi, dan batas jumlah baris. SQL harus sudah lolos pemeriksaan di lib/ai/sqlAman.ts. */
+export async function kueriBacaSaja(sql: string, maksBaris = 200, batasMs = 5000): Promise<Baris[]> {
+  const c = await pool().getConnection();
+  try {
+    const [[v]] = await c.query<RowDataPacket[]>('SELECT VERSION() v');
+    const maria = /mariadb/i.test(String(v.v));
+    await c.query('START TRANSACTION READ ONLY');
+    const kueri = maria
+      ? `SET STATEMENT max_statement_time=${batasMs / 1000} FOR SELECT * FROM (${sql}) AS hasil_ai LIMIT ${maksBaris}`
+      : `SELECT /*+ MAX_EXECUTION_TIME(${batasMs}) */ * FROM (${sql}) AS hasil_ai LIMIT ${maksBaris}`;
+    const [rows] = await c.query<RowDataPacket[]>(kueri);
+    return rows as Baris[];
+  } finally {
+    await c.query('ROLLBACK').catch(() => {});
+    c.release();
+  }
+}

@@ -7,7 +7,8 @@
    Dipakai dashboard dan payroll (hitung hari hadir / mangkir). */
 import { q, type Baris } from './db';
 import { hariLiburMingguan, inList, liburResmi } from './aturan';
-import { hariIso, tambahHari, tglWIB } from './waktu';
+import { hariIso, tambahHari, tglWIB, POLA_TGL } from './waktu';
+import { setg } from './pengaturan';
 
 export type PetaStatus = Record<number, Record<string, string>>;
 
@@ -29,9 +30,11 @@ export async function statusHarian(users: Baris[], dari: string, sampai: string)
   for (const r of await q(`SELECT user_id, tanggal, shift_id FROM jadwal_shift WHERE user_id IN (${ids}) AND tanggal BETWEEN ? AND ?`, [dari, sampai]))
     (jdw[r.user_id] ??= {})[r.tanggal] = r.shift_id;
 
+  const awal = await setg('tanggal_mulai_hris', ''), mulaiHris = POLA_TGL.test(awal) ? awal : '1970-01-01';
   const hasil: PetaStatus = {};
   for (const u of users) {
-    const uid = u.id, masuk = u.tgl_masuk ?? '1970-01-01', keluar = u.tgl_keluar ?? null, mingguan = await hariLiburMingguan(u);
+    // hari sebelum aplikasi mulai dipakai tidak dihitung (belum ada yang absen di HRIS ini)
+    const uid = u.id, masuk = [u.tgl_masuk ?? '1970-01-01', mulaiHris].sort().pop()!, keluar = u.tgl_keluar ?? null, mingguan = await hariLiburMingguan(u);
     const peta: Record<string, string> = (hasil[uid] = {});
     for (let t = dari; t <= sampai; t = tambahHari(t, 1)) {
       if (t < masuk || (keluar && t > keluar) || t > hariIni) { peta[t] = 'luar'; continue; }

@@ -71,10 +71,11 @@ export default function Riwayat() {
               {a.approval === 'ditolak' && <div className="tiny" style={{ color: 'var(--danger)', marginTop: 4 }}>Ditolak {a.approvalOleh}{a.approvalCatatan && ': ' + a.approvalCatatan} — dihitung tidak hadir</div>}
               {a.mode === 'lapangan' && <div className="tiny" style={{ color: 'var(--purple)', marginTop: 4 }}>Lapangan · {km(a.inJarakBase || 0)} dari {a.baseLabel || 'titik awal'}</div>}
               {(a.inLuar || a.outLuar) && <div className="tiny" style={{ color: 'var(--warning)', marginTop: 4 }}>Absen di luar area kantor</div>}
-              <div className="row" style={{ marginTop: 8 }}>
-                {a.inPhoto ? <img src={a.inPhoto} className="thumb" style={{ aspectRatio: '1/1', cursor: 'pointer' }} loading="lazy" alt="foto masuk" onClick={() => lihatFoto(a, 'in')} /> : <div />}
-                {a.outPhoto ? <img src={a.outPhoto} className="thumb" style={{ aspectRatio: '1/1', cursor: 'pointer' }} loading="lazy" alt="foto pulang" onClick={() => lihatFoto(a, 'out')} /> : <div />}
-              </div>
+              {/* foto tidak ditampilkan di daftar (riwayat bisa puluhan hari); dibuka hanya bila diperlukan */}
+              {(a.inPhoto || a.outPhoto) && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                {a.inPhoto && <button type="button" className="btn ghost sm auto" onClick={() => lihatFoto(a, 'in')}><Ikon n="camera" />Foto masuk</button>}
+                {a.outPhoto && <button type="button" className="btn ghost sm auto" onClick={() => lihatFoto(a, 'out')}><Ikon n="camera" />Foto pulang</button>}
+              </div>}
             </div>
           ))}
           <NavigasiHalaman page={list.page} total={list.total} totalPages={list.totalPages} ubah={setPage} />

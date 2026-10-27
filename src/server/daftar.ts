@@ -21,8 +21,9 @@ import { aksiOrganisasi } from './aksi/organisasi';
 import { aksiRekap } from './aksi/rekap';
 import { aksiNotifikasi } from './aksi/notifikasi';
 import { aksiPengajuanAdmin } from './aksi/pengajuanAdmin';
+import { aksiAsisten } from './aksi/asisten';
 
 export const AKSI: KumpulanAksi = {
   ...aksiAuth, ...aksiAbsen, ...aksiPengajuan, ...aksiInfo, ...aksiInbox, ...aksiBranding,
-  ...aksiPersetujuan, ...aksiAdmin, ...aksiKaryawan, ...aksiDashboard, ...aksiLaporan, ...aksiPayroll, ...aksiOrganisasi, ...aksiRekap, ...aksiNotifikasi, ...aksiPengajuanAdmin,
+  ...aksiPersetujuan, ...aksiAdmin, ...aksiKaryawan, ...aksiDashboard, ...aksiLaporan, ...aksiPayroll, ...aksiOrganisasi, ...aksiRekap, ...aksiNotifikasi, ...aksiPengajuanAdmin, ...aksiAsisten,
 };

@@ -16,6 +16,7 @@ export const NAV: ItemNav[] = [
   { k: 'slip', href: '/slip', t: 'Slip Gaji', ic: 'banknote', g: 'Saya', s: bukanDir, siap: true },
   { k: 'riwayat', href: '/riwayat', t: 'Riwayat Absen', ic: 'history', g: 'Saya', s: bukanDir, siap: true },
   { k: 'dash', href: '/dashboard', t: 'Dashboard', ic: 'layout-dashboard', g: 'Kelola', s: adm, siap: true },
+  { k: 'ai', href: '/asisten', t: 'AI Asisten', ic: 'sparkles', g: 'Kelola', s: adm, siap: true },
   { k: 'inbox', href: '/persetujuan', t: 'Persetujuan', ic: 'inbox', g: 'Kelola', s: penyetuju, cnt: 'total', siap: true },
   { k: 'abs', href: '/absensi', t: 'Rekap Absensi', ic: 'fingerprint', g: 'Waktu Kerja', s: penyetuju, siap: true },
   { k: 'cut', href: '/cuti', t: 'Cuti', ic: 'plane', g: 'Waktu Kerja', s: penyetuju, siap: true },

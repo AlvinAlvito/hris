@@ -55,7 +55,7 @@ export interface SettingsPublik {
   batasJamTerbuka: number; lemburMinMenit: number; jamMasuk: string; jamPulang: string;
   toleransi: number; jatahDefault: number; minJarakDefault: number; wajibFoto: boolean; geofenceOn: boolean;
   titikAwalOlehAdmin: boolean; officeLat: number | null; officeLng: number | null; radius: number;
-  jadwalKerja: JadwalKerja; potongMangkir: boolean;
+  jadwalKerja: JadwalKerja; potongMangkir: boolean; tanggalMulaiHris: string;
 }
 
 export async function settingsPublik(): Promise<SettingsPublik> {
@@ -89,5 +89,6 @@ export async function settingsPublik(): Promise<SettingsPublik> {
     radius: n('radius', 200),
     jadwalKerja: jk,
     potongMangkir: on('potong_mangkir', 0),
+    tanggalMulaiHris: s.tanggal_mulai_hris ?? '',
   };
 }
