@@ -1,0 +1,106 @@
+/* =====================================================================
+   Log kerja (Pekerjaan Saya) & Beban Kerja
+   ===================================================================== */
+.lk-tab{margin-bottom:14px}
+.lk-periode{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.lk-jenis{margin:0;width:auto}
+.lk-geser{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.lk-geser b{min-width:120px;text-align:center;font-size:14px}
+.lk-atas{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.lk-atas .lk-periode{flex:1}
+.lk-atas-kanan{display:flex;gap:8px;flex-wrap:wrap}
+.lk-grid{gap:14px;align-items:start}
+.lk-stat{grid-template-columns:repeat(5,minmax(0,1fr));margin:0 0 14px}
+/* meter utilisasi */
+.lk-meter-atas{display:flex;align-items:center;gap:10px}
+.lk-util{font-size:28px;line-height:1}
+.lk-meter.ringkas .lk-bar{margin:0}
+.lk-util.hijau{color:var(--success)}.lk-util.kuning{color:var(--warning)}.lk-util.merah{color:var(--danger)}.lk-util.abu{color:var(--muted)}
+.lk-st.hijau{background:var(--success-soft);color:var(--success)}.lk-st.kuning{background:var(--warning-soft);color:var(--warning)}
+.lk-st.merah{background:var(--danger-soft);color:var(--danger)}.lk-st.abu{background:var(--surface-3);color:var(--muted)}
+.lk-bar{position:relative;height:10px;border-radius:99px;background:var(--surface-3);margin:12px 0 6px}
+.lk-bar i{display:block;height:100%;border-radius:99px;background:var(--sky);transition:width .5s}
+.lk-bar i.hijau{background:var(--success)}.lk-bar i.kuning{background:var(--warning)}.lk-bar i.merah{background:var(--danger)}.lk-bar i.abu{background:var(--line-2)}
+.lk-batas{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink-2);opacity:.35;border-radius:2px}
+.lk-meter-bawah{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+/* form */
+.lk-cepat{display:flex;flex-wrap:wrap;gap:6px}
+.lk-cepat button{border:1px solid var(--line);background:var(--surface);color:var(--ink-2);border-radius:999px;padding:6px 12px;font:600 12.5px var(--font);cursor:pointer}
+.lk-cepat button.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.lk-cepat input{width:110px;padding:6px 10px;border-radius:999px;font-size:12.5px}
+.lk-link{display:inline-flex;align-items:center;gap:5px;border:0;background:none;color:var(--primary);font:600 12.5px var(--font);cursor:pointer;padding:8px 0 0}
+.lk-link .ik{width:14px;height:14px}
+.lk-timer{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:13px}
+.lk-titik-merah{width:9px;height:9px;border-radius:50%;background:var(--danger);animation:lkKedip 1.2s infinite}
+@keyframes lkKedip{50%{opacity:.25}}
+.lk-status{margin:0}
+.lk-salin{margin-top:12px;white-space:normal;text-align:left;height:auto;min-height:34px}
+/* daftar */
+.lk-hari-daftar{display:grid;gap:14px}
+.lk-hari h4{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:0 0 8px;font-size:13.5px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.lk-item{border:1px solid var(--line);border-left:4px solid var(--line-2);border-radius:12px;padding:10px 12px;margin-bottom:8px;background:var(--surface-2)}
+.lk-item.st-selesai{border-left-color:var(--success)}.lk-item.st-proses{border-left-color:var(--info)}
+.lk-item.st-tertunda{border-left-color:var(--warning)}.lk-item.st-rencana{border-left-color:var(--line-2);opacity:.85}
+.lk-item-atas{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+.lk-kat{font-size:11px;font-weight:700;color:var(--primary);background:var(--primary-soft);border-radius:999px;padding:2px 9px}
+.lk-uraian{margin-top:6px;font-size:13.5px;color:var(--ink)}
+.lk-ket{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+.lk-ket a{display:inline-flex;align-items:center;gap:3px}
+.lk-komentar{display:flex;gap:8px;margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--warning-soft);font-size:12.5px}
+.lk-komentar div{display:grid}
+.lk-komentar .ik{color:var(--warning);flex:0 0 auto;width:15px;height:15px;margin-top:2px}
+.lk-item-bawah{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap}
+.lk-st-pilih{width:auto;padding:4px 28px 4px 10px;font-size:12px;border-radius:999px;font-weight:700}
+.lk-st-pilih.st-selesai,.lk-st-badge.st-selesai{background:var(--success-soft);color:var(--success)}
+.lk-st-pilih.st-proses,.lk-st-badge.st-proses{background:var(--info-soft);color:var(--info)}
+.lk-st-pilih.st-tertunda,.lk-st-badge.st-tertunda{background:var(--warning-soft);color:var(--warning)}
+.lk-st-pilih.st-rencana,.lk-st-badge.st-rencana{background:var(--surface-3);color:var(--ink-2)}
+/* kategori */
+.lk-kategori{display:grid;gap:8px}
+.lk-kategori>div{display:grid;grid-template-columns:minmax(0,1.2fr) 1fr auto;gap:10px;align-items:center;font-size:13px}
+.lk-kat-nama{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lk-kat-daftar{display:grid;margin-top:12px;border-top:1px solid var(--line)}
+.lk-kat-baris{display:flex;align-items:center;gap:6px;padding:8px 2px;border-bottom:1px solid var(--line)}
+.lk-kat-baris>span{flex:1;min-width:0}
+.lk-kat-baris.mati{opacity:.55}
+/* tabel tim */
+.lk-tabel{display:grid;margin-top:10px;border-top:1px solid var(--line)}
+.lk-baris{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.6fr) 120px;gap:14px;align-items:center;padding:11px 6px;border:0;border-bottom:1px solid var(--line);
+  background:none;text-align:left;font:inherit;color:inherit;cursor:pointer}
+.lk-baris:hover{background:var(--surface-2)}
+.lk-nama{display:grid;gap:2px;min-width:0}
+.lk-baris-meter{display:grid;gap:3px;min-width:0}
+.lk-baris-nilai{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.lk-baris-nilai .lk-util{font-size:17px}
+/* detail */
+.lk-detail-kepala{margin-bottom:10px}
+.lk-harian{display:flex;gap:4px;align-items:flex-end;height:120px;overflow-x:auto;padding-bottom:2px}
+.lk-harian-kol{flex:1 0 16px;display:flex;flex-direction:column;align-items:center;gap:3px;height:100%}
+.lk-harian-tiang{position:relative;flex:1;width:100%;max-width:22px}
+.lk-harian-tiang i{position:absolute;bottom:0;left:0;right:0;border-radius:5px 5px 0 0}
+.lk-harian-tiang i.kap{background:var(--surface-3)}
+.lk-harian-tiang i.isi{background:var(--sky);left:3px;right:3px}
+/* heatmap */
+.lk-heat td,.lk-heat th{text-align:center;white-space:nowrap}
+.lk-heat td:first-child,.lk-heat th:first-child{text-align:left}
+.lk-sel{font-weight:700;font-size:12px;border-radius:6px}
+td.lk-sel.hijau,span.lk-sel.hijau{background:var(--success-soft);color:var(--success)}
+td.lk-sel.kuning,span.lk-sel.kuning{background:var(--warning-soft);color:var(--warning)}
+td.lk-sel.merah,span.lk-sel.merah{background:var(--danger-soft);color:var(--danger)}
+td.lk-sel.abu,span.lk-sel.abu{color:var(--muted)}
+.lk-legenda{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.lk-legenda span{padding:3px 10px}
+@media (max-width:900px){.lk-stat{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:640px){
+  .lk-stat{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .lk-periode{flex-direction:column;align-items:stretch}
+  .lk-geser{justify-content:space-between}
+  .lk-geser b{flex:1;min-width:0;font-size:13px}
+  .lk-baris{grid-template-columns:minmax(0,1fr) auto;gap:6px 10px}
+  .lk-baris-meter{grid-column:1/-1;order:3}
+  .lk-kategori>div{grid-template-columns:minmax(0,1fr) auto}
+  .lk-kategori .bar{grid-column:1/-1;order:3}
+  .lk-form .row{flex-direction:column;gap:0}
+  /* Pekerjaan Saya di HP: ringkasan beban kerja tampil sebelum form & daftar */
+  .lk-halaman .lk-grid>div:last-child{order:-1}
+}

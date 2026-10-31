@@ -31,7 +31,8 @@ export function Markdown({ teks }: { teks: string }) {
     if (/^\s*\|.*\|\s*$/.test(b) && i + 1 < baris.length && /^\s*\|?\s*:?-{2,}/.test(baris[i + 1])) {
       const kepala = sel(b); i += 2;
       const isi: string[][] = [];
-      while (i < baris.length && /^\s*\|.*\|\s*$/.test(baris[i])) isi.push(sel(baris[i++]));
+      // baris isi cukup diawali "|" (model kadang lupa menutup baris dengan "|")
+      while (i < baris.length && /^\s*\|/.test(baris[i])) isi.push(sel(baris[i++]));
       blok.push(<div key={k++} className="tblwrap md-tabel"><table><thead><tr>{kepala.map((h, j) => <th key={j}>{sebaris(h)}</th>)}</tr></thead>
         <tbody>{isi.map((r, a) => <tr key={a}>{r.map((c, j) => <td key={j}>{sebaris(c)}</td>)}</tr>)}</tbody></table></div>);
       continue;
@@ -46,13 +47,21 @@ export function Markdown({ teks }: { teks: string }) {
     if (h) { blok.push(<div key={k++} className={'md-h md-h' + h[1].length}>{sebaris(h[2])}</div>); i++; continue; }
     if (/^\s*([-*_])\1{2,}\s*$/.test(b)) { blok.push(<hr key={k++} className="md-hr" />); i++; continue; }
     if (/^\s*([-*•]|\d+[.)])\s+/.test(b)) {
-      const urut = /^\s*\d+[.)]/.test(b), item: ReactNode[] = [];
+      // daftar bertingkat: butir menjorok (≥2 spasi) menjadi sub-daftar milik butir di atasnya;
+      // nomor mengikuti angka yang ditulis, sehingga daftar yang terpotong baris kosong tetap bernomor benar
+      type Butir = { no: number | null; teks: string; anak: { no: number | null; teks: string }[] };
+      const butir: Butir[] = [];
       while (i < baris.length && /^\s*([-*•]|\d+[.)])\s+/.test(baris[i])) {
-        const dalam = /^\s{2,}/.test(baris[i]);
-        item.push(<li key={i} className={dalam ? 'md-dalam' : undefined}>{sebaris(baris[i].replace(/^\s*([-*•]|\d+[.)])\s+/, ''), 'l' + i)}</li>);
+        const m = /^(\s*)([-*•]|(\d+)[.)])\s+(.*)$/.exec(baris[i])!;
+        const x = { no: m[3] ? Number(m[3]) : null, teks: m[4] };
+        if (m[1].length >= 2 && butir.length) butir[butir.length - 1].anak.push(x); else butir.push({ ...x, anak: [] });
         i++;
       }
-      blok.push(urut ? <ol key={k++}>{item}</ol> : <ul key={k++}>{item}</ul>);
+      const daftar = (l: { no: number | null; teks: string; anak?: { no: number | null; teks: string }[] }[], kunci: string): ReactNode => {
+        const isi = l.map((x, j) => <li key={j} value={x.no ?? undefined}>{sebaris(x.teks, kunci + j)}{x.anak?.length ? daftar(x.anak, kunci + j + '-') : null}</li>);
+        return l[0].no !== null ? <ol key={kunci}>{isi}</ol> : <ul key={kunci}>{isi}</ul>;
+      };
+      blok.push(<Fragment key={k++}>{daftar(butir, 'l' + i + '-')}</Fragment>);
       continue;
     }
     const para: string[] = [];

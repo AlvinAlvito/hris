@@ -6,5 +6,8 @@ export async function register() {
     if (process.env.PENGINGAT_MATI === '1') return;
     const { mulaiPengingat } = await import('./server/pengingat');
     mulaiPengingat();
+    // analisis CV pelamar di latar belakang (antrean, tahan batas kuota AI)
+    const { mulaiPekerjaRekrutmen } = await import('./lib/rekrutmen');
+    mulaiPekerjaRekrutmen();
   }
 }

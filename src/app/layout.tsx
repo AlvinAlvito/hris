@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import './rekrutmen.css';
+import './kpi.css';
+import './logkerja.css';
 
 export const metadata: Metadata = {
   title: 'HRIS POSI',

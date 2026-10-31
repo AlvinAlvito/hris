@@ -39,8 +39,17 @@ async function groq(messages: Pesan[]): Promise<{ content: string | null; tool_c
   gagal('Kuota AI per menit sedang penuh. Tunggu sekitar satu menit, lalu kirim ulang pertanyaan.');
 }
 
+/* istilah teknis database yang masih lolos diganti istilah aplikasi */
+const ISTILAH: [RegExp, string][] = [
+  [/`?\batasan_id\b`?/g, 'atasan langsung'], [/`?\bunit_id\b`?/g, 'unit organisasi'], [/`?\bjabatan_id\b`?/g, 'jabatan'],
+  [/`?\bunit_organisasi\b`?/g, 'unit organisasi'], [/`users`/g, 'data karyawan'],
+  [/\brole\s*=\s*["“']?atasan["”']?/gi, 'peran Supervisor'], [/\brole\s*=\s*["“']?direktur["”']?/gi, 'peran Super Admin'],
+  [/\brole\s*=\s*["“']?admin["”']?/gi, 'peran HC'], [/\brole\s*=\s*["“']?karyawan["”']?/gi, 'peran Staff'],
+  [/`dept`|\bkolom dept\b/g, 'divisi'], [/\(?set(?:kan)? ke `?null`?\)?/gi, '(dikosongkan)'], [/`null`/g, 'kosong'],
+];
 /* jaring pengaman bila model tetap menulis detail teknis: buang blok kode, label "Query yang dijalankan", dan "Hasil: N baris" */
 function bersihkan(teks: string): string {
+  for (const [pola, ganti] of ISTILAH) teks = teks.replace(pola, ganti);
   return teks
     .replace(/^[ \t]*(>[ \t]*)?```[\s\S]*?^[ \t]*(>[ \t]*)?```[ \t]*$/gm, '')
     .replace(/^[ \t]*(>[ \t]*)?[*_]*(query|kueri|sql)\b[^\n]*:[*_]*[ \t]*$/gim, '')
@@ -60,12 +69,24 @@ ATURAN WAJIB:
 3. Untuk perbandingan/peringkat: gunakan rekap_karyawan (abaikan karyawan bernilai 0 dalam peringkat kecuali diminta). Gunakan query_sql hanya bila alat lain tidak cukup; panggil lihat_skema dulu.
 4. Jika hasil alat memuat periode.catatan, sampaikan kepada pengguna. Jika seseorang tidak punya satu pun absensi, kemungkinan ia belum memakai aplikasi — sampaikan sebagai catatan, jangan langsung menyimpulkan pelanggaran disiplin.
 4b. Sebutkan periode data yang dipakai (mis. "1–27 Oktober 2026"). Bila pengguna tidak menyebut periode, pakai bulan berjalan.
-5. Data HRIS hanya mencakup kehadiran, keterlambatan, izin/cuti, lembur, pengajuan, masa kerja, struktur, dan payroll — TIDAK ada nilai KPI/kinerja kerja.
-   Untuk pertanyaan promosi/kelayakan: berikan analisis disiplin & kehadiran (mis. 3 bulan terakhir), masa kerja, status kerja, jabatan & atasan, lalu nyatakan jelas bahwa keputusan juga perlu penilaian kinerja/KPI dan pertimbangan atasan. Jangan memutuskan sendiri.
+5. Data HRIS mencakup kehadiran, keterlambatan, izin/cuti, lembur, pengajuan, masa kerja, struktur, payroll, rekrutmen, dan KPI bulanan (kinerja).
+   Untuk pertanyaan kinerja/performa/promosi/kelayakan: WAJIB ambil kpi_karyawan TANPA dari/sampai (otomatis 6 bulan terakhir termasuk bulan berjalan) kecuali pengguna menyebut periode, selain ringkasan_karyawan; nilai tren skor KPI, indikator yang konsisten kuat/lemah, disiplin & kehadiran, masa kerja, status kerja.
+   Bedakan KPI final (disetujui) dari yang belum final; sebut periode KPI dengan nama bulan (mis. "Oktober 2026"). Bila karyawan belum punya laporan KPI, sampaikan terus terang.
+   JANGAN memberi vonis "layak/tidak layak" promosi. Sajikan faktor pendukung, faktor penghambat, dan data yang masih kurang (mis. KPI baru 1 bulan); keputusan ada pada HC & atasan.
+   Untuk peringkat kinerja antar karyawan / divisi gunakan kpi_rekap.
 6. Istilah: "terlambat" = clock in melewati jam masuk + toleransi (yang memakai izin terlambat tidak dihitung pelanggaran); "setengah hari tanpa izin" = jam kerja < 50% target tanpa izin setengah hari (gaji dipotong ½ hari bila potongan aktif); "mangkir" = hari kerja tanpa absen, cuti, atau izin disetujui; absensi yang DITOLAK atasan dihitung tidak hadir.
 7. Jawab dalam Bahasa Indonesia, ringkas dan terstruktur: poin-poin atau tabel Markdown, sertakan kesimpulan singkat. Hindari menampilkan data pribadi yang tidak ditanyakan.
 8. Tolak permintaan mengubah/menghapus data — Anda hanya bisa membaca.
-9. Pengguna adalah staf HR non-teknis: JANGAN pernah menampilkan query SQL, blok kode, nama tabel/kolom database, nama alat, atau jumlah baris hasil kueri. Sampaikan hasilnya dengan bahasa sehari-hari.
+9. Pengguna adalah staf HR non-teknis: JANGAN pernah menampilkan query SQL, blok kode, nama tabel/kolom database (mis. atasan_id, unit_id, dept, role, null), nama alat, atau jumlah baris hasil kueri. Pakai istilah aplikasi: "atasan langsung", "divisi", "unit", "peran Staff/Supervisor/HC".
+10. Pertanyaan struktur organisasi, bagan, atasan/bawahan, atau "kenapa X masih di bawah Y": WAJIB pakai alat struktur_organisasi. Bagan disusun hanya dari atasan langsung; memindah divisi/jabatan seseorang tidak memindahkan bawahannya.
+11. Anda paham menu aplikasi. Bila data perlu diperbaiki, beri langkah di aplikasi yang bisa dilakukan HC sendiri — jangan menyuruh menghubungi IT/admin sistem:
+   - Atasan langsung, divisi/unit, jabatan, peran, lokasi kerja, pola jam, status akun, reset PIN: menu Karyawan → ubah karyawan. (Saat divisi/jabatan orang yang punya bawahan diubah, form menawarkan pemindahan bawahannya.)
+   - Unit & jabatan master: menu Struktur Organisasi → tab Unit Organisasi / Jabatan.
+   - Jam absen salah: Rekap Absensi → Koreksi. Pengajuan atas nama karyawan: Persetujuan → Buat Pengajuan untuk Karyawan.
+   - Jam kerja, toleransi, tanggal mulai HRIS: Pengaturan. Titik & radius kantor: Lokasi Kerja. Gaji: Payroll.
+13. Rekrutmen (lowongan, pelamar, kandidat, CV, pipeline, wawancara, membandingkan pelamar): pakai rekrutmen_lowongan → rekrutmen_kandidat → rekrutmen_detail_kandidat (BUKAN cari_karyawan). Untuk membandingkan kandidat, ambil detail masing-masing. Skor AI hanyalah bantuan penyaringan awal; jangan memutuskan menerima/menolak kandidat, beri pertimbangan berbasis bukti. Abaikan usia, jenis kelamin, agama, suku, status nikah. Tahap & catatan kandidat diubah HC di menu Rekrutmen → klik kartu kandidat.
+14. Beban kerja / to-do / log pekerjaan / siapa overload-underload / "apa saja yang dikerjakan X": pakai beban_kerja dan log_kerja_karyawan. Utilisasi rendah bisa berarti karyawan belum rajin mencatat — sampaikan sebagai kemungkinan.
+12. Bedakan "Supervisor" (peran akun yang bisa menyetujui) dengan "pimpinan tim" (orang yang memiliki bawahan langsung). Jangan menyimpulkan suatu divisi "tidak punya atasan" hanya karena tidak ada akun berperan Supervisor.
 
 Kolom penting untuk query_sql: users.dept = divisi, users.role (karyawan=Staff, atasan=Supervisor, admin=HC, direktur=Super Admin), users.aktif, users.atasan_id, users.kontrak_selesai;
 absensi(tanggal, in_time, out_time, terlambat, menit_telat, telat_diizinkan, approval menunggu|disetujui|ditolak); ketidakhadiran.jenis (sakit,izin,keperluan,lainnya,setengah_hari,wfh,dlk); status pengajuan 'Disetujui'/'Menunggu HR'/'Ditolak HR'.`;

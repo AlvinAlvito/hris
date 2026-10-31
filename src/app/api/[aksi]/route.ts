@@ -32,7 +32,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ aksi: string }
 }
 /* GET hanya untuk aksi baca yang dibuka langsung di browser (manifest PWA, unduh dokumen) —
    aksi yang mengubah data tidak boleh bisa dipicu lewat tautan biasa. */
-const BOLEH_GET = new Set(['br_manifest', 'dok_unduh', 'bootstrap']);
+const BOLEH_GET = new Set(['br_manifest', 'dok_unduh', 'bootstrap', 'rk_cv']);
 export async function GET(req: Request, ctx: { params: Promise<{ aksi: string }> }) {
   const { aksi } = await ctx.params;
   if (!BOLEH_GET.has(aksi)) return NextResponse.json({ ok: false, error: 'Gunakan POST' }, { status: 405 });

@@ -8,6 +8,7 @@ import { BadgeStatusKerja } from '@/components/BadgeStatusKerja';
 import { DaftarDokumen } from '@/components/Dokumen';
 import { Ikon } from '@/components/Ikon';
 import { ImportKaryawan } from '@/components/ImportKaryawan';
+import { PIN_AWAL } from '@/lib/pinAwal';
 import { PilihPeta } from '@/components/PilihPeta';
 import { api } from '@/lib/klien/api';
 import { bacaBerkas } from '@/lib/klien/berkas';
@@ -34,7 +35,18 @@ export default function Karyawan() {
   }, [galat]);
   useEffect(() => { muat(); }, [muat]);
 
-  const form = (u: Data | null) => bukaSheet(<FormKaryawan u={u} list={list ?? []} cabang={cabang} org={org} selesai={muat} />);
+  const form = (u: Data | null, dariLamaran?: Data) => bukaSheet(<FormKaryawan u={u} list={list ?? []} cabang={cabang} org={org} selesai={muat} dariLamaran={dariLamaran} />);
+  // dari menu Rekrutmen: "Jadikan Karyawan" membuka form Tambah Karyawan yang sudah terisi data kandidat
+  const router = useRouter();
+  const sudahLamaran = useState({ v: false })[0];
+  useEffect(() => {
+    const id = Number(new URLSearchParams(window.location.search).get('dari_lamaran'));
+    if (!id || !list || sudahLamaran.v) return;
+    sudahLamaran.v = true;
+    router.replace('/karyawan');
+    api<Data>('rk_jadikan_karyawan', { id }).then((d) => form(null, d)).catch(galat);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list]);
   const profil = (id: number) => bukaSheet(<ProfilKaryawan id={id} edit={(u) => form(u)} />, { besar: true });
   const ekspor = () => api<Data[]>('adm_users').then((l) => keExcel(l.map((u) => ({
     NIK: u.nik, Nama: u.nama, Jabatan: u.jabatan, Divisi: u.dept, Peran: labelRole(u.role), 'Lokasi Kerja': u.cabangNama || '',
@@ -152,11 +164,11 @@ function TombolMasukSebagai({ u, ringkas = false }: { u: Data; ringkas?: boolean
 }
 
 /* ---------- form tambah / edit karyawan ---------- */
-function FormKaryawan({ u, list, cabang, org, selesai, awal }: { u: Data | null; list: Data[]; cabang: Data[]; org: DataOrganisasi | null; selesai: () => void; awal?: Data }) {
+function FormKaryawan({ u, list, cabang, org, selesai, awal, dariLamaran }: { u: Data | null; list: Data[]; cabang: Data[]; org: DataOrganisasi | null; selesai: () => void; awal?: Data; dariLamaran?: Data }) {
   const { me, settings, bukaSheet, tutupSheet, yakin, toast, galat } = useAplikasi();
   const [tab, setTab] = useState('kerja');
   const [v, setV] = useState<Data>(() => awal ?? ({
-    nik: u?.nik ?? '', pin: u ? '' : '123456', nama: u?.nama ?? '', jabatan: u?.jabatan ?? '', dept: u?.dept ?? '', cabangId: u?.cabangId ?? 0,
+    nik: u?.nik ?? '', pin: u ? '' : PIN_AWAL, nama: u?.nama ?? '', jabatan: u?.jabatan ?? '', dept: u?.dept ?? '', cabangId: u?.cabangId ?? 0,
     tglMasuk: u?.tglMasuk ?? todayStr(), role: ['admin', 'direktur', 'atasan'].includes(u?.role) ? u!.role : 'karyawan', atasanId: u?.atasanId ?? 0,
     unitId: u?.unitId ?? 0, jabatanId: u?.jabatanId ?? 0,
     statusKerja: u?.statusKerja ?? 'tetap', tglKeluar: u?.tglKeluar ?? '', kontrakMulai: u?.kontrakMulai ?? '', kontrakSelesai: u?.kontrakSelesai ?? '',
@@ -165,13 +177,25 @@ function FormKaryawan({ u, list, cabang, org, selesai, awal }: { u: Data | null;
     lokasiMode: u?.lokasiMode ?? 'kantor', minJarakKm: u?.minJarakKm ?? settings.minJarakDefault, baseLabel: u?.baseLabel ?? '',
     baseLat: u?.baseLat ?? null, baseLng: u?.baseLng ?? null, aktif: u ? (u.aktif ? 1 : 0) : 1,
     ...Object.fromEntries(FIELD_BIO.map((f) => [f[1], u?.[f[1]] ?? ''])),
+    // kandidat rekrutmen yang diterima: data diri & posisi terisi otomatis
+    ...(dariLamaran ? { nama: dariLamaran.nama, jabatan: dariLamaran.jabatan, dept: dariLamaran.dept, statusKerja: dariLamaran.statusKerja, tglMasuk: dariLamaran.tglMasuk,
+      noHp: dariLamaran.noHp, email: dariLamaran.email, pendidikan: dariLamaran.pendidikan, jurusan: dariLamaran.jurusan, institusi: dariLamaran.institusi,
+      unitId: org?.unit.find((o) => o.nama.toLowerCase() === String(dariLamaran.dept).toLowerCase())?.id ?? 0 } : {}),
   }));
   const [kirim, setKirim] = useState(false);
   const set = (k: string) => (e: { target: { value: string } }) => setV((x) => ({ ...x, [k]: e.target.value }));
+  // pindah divisi / jabatan: bawahan langsung tidak ikut berubah otomatis, jadi tawarkan atasan baru untuk mereka
+  const bawahan = u ? list.filter((x) => x.aktif && x.atasanId === u.id) : [];
+  const posisiBerubah = !!u && (+v.unitId !== +(u.unitId ?? 0) || +v.jabatanId !== +(u.jabatanId ?? 0) || v.dept !== (u.dept ?? '') || v.jabatan !== (u.jabatan ?? '') || !+v.aktif);
+  // divisi yang dipakai pembanding: unit terpilih di form (bila ada) atau teks divisi
+  const divisiKini = (org?.unit.find((o) => o.id === +v.unitId)?.nama ?? v.dept ?? '').trim();
+  const bedaDivisi = bawahan.filter((x) => (x.dept ?? '').trim() && divisiKini && (x.dept ?? '').trim() !== divisiKini && !/direksi/i.test(divisiKini));
+  const perluPerhatian = posisiBerubah || bedaDivisi.length > 0;
+  const [bawahanKe, setBawahanKe] = useState(0);
 
   // setelah memilih titik, form dibuka lagi dengan isian terakhir
   const pilihTitik = () => {
-    const isi = v, buka = (x: Data) => bukaSheet(<FormKaryawan u={u} list={list} cabang={cabang} org={org} selesai={selesai} awal={x} />);
+    const isi = v, buka = (x: Data) => bukaSheet(<FormKaryawan u={u} list={list} cabang={cabang} org={org} selesai={selesai} awal={x} dariLamaran={dariLamaran} />);
     bukaSheet(<PilihPeta judul="Titik Awal Kunjungan" lat={v.baseLat} lng={v.baseLng} radius={(+v.minJarakKm || 2.5) * 1000} tipeRadius="luar"
       simpan={(lat, lng) => { buka({ ...isi, baseLat: lat, baseLng: lng }); toast('Titik awal dipilih, tekan Simpan'); }} batal={() => buka(isi)} />);
   };
@@ -181,8 +205,10 @@ function FormKaryawan({ u, list, cabang, org, selesai, awal }: { u: Data | null;
     if (v.lokasiMode === 'kantor' && !+v.cabangId) { toast('Pilih lokasi kerja karyawan ini', true); return; }
     setKirim(true);
     try {
-      const r = await api<{ pesan: string }>('adm_user_save', { ...v, id: u?.id ?? 0, cabangId: +v.cabangId, atasanId: +v.atasanId, jatah: +v.jatah,
-        unitId: +v.unitId, jabatanId: +v.jabatanId, targetMenit: +v.targetMenit, minJarakKm: +v.minJarakKm, aktif: +v.aktif });
+      const r = await api<{ pesan: string; id: number }>('adm_user_save', { ...v, id: u?.id ?? 0, cabangId: +v.cabangId, atasanId: +v.atasanId, jatah: +v.jatah,
+        unitId: +v.unitId, jabatanId: +v.jabatanId, targetMenit: +v.targetMenit, minJarakKm: +v.minJarakKm, aktif: +v.aktif,
+        pindahBawahanKe: bawahan.length ? bawahanKe : 0 });
+      if (dariLamaran && r.id) await api('rk_tautkan_karyawan', { id: dariLamaran.lamaranId, userId: r.id }, true).catch(() => {});
       tutupSheet(); toast(r.pesan); selesai();
     } catch (e) { galat(e); setKirim(false); }
   };
@@ -222,6 +248,17 @@ function FormKaryawan({ u, list, cabang, org, selesai, awal }: { u: Data | null;
       <label>Atasan langsung <span className="tiny">(struktur organisasi & siapa Supervisor yang meng-approve)</span></label>
       <select value={v.atasanId} onChange={set('atasanId')}><option value={0}>— tidak ada —</option>
         {list.filter((x) => x.aktif && x.id !== u?.id).map((x) => <option key={x.id} value={x.id}>{x.nama} · {x.jabatan}</option>)}</select>
+      {bawahan.length > 0 && (
+        <div className={perluPerhatian ? 'warn' : 'note'} style={{ marginTop: 12 }}>
+          <b>{perluPerhatian ? `${u!.nama} masih memiliki ${bawahan.length} bawahan langsung` : `Bawahan langsung (${bawahan.length})`}</b>
+          <div className="tiny" style={{ marginTop: 4 }}>{bawahan.map((x) => `${x.nama}${x.dept ? ` (${x.dept})` : ''}`).join(', ')}</div>
+          {bedaDivisi.length > 0 && !posisiBerubah && <div className="tiny" style={{ marginTop: 6 }}>{bedaDivisi.length} di antaranya berada di divisi lain dari {u!.nama.split(' ')[0]} ({divisiKini}). Bila {u!.nama.split(' ')[0]} sudah pindah divisi, pindahkan mereka ke atasan yang baru.</div>}
+          {posisiBerubah && <div className="tiny" style={{ marginTop: 6 }}>Memindah divisi, jabatan, atau menonaktifkan akun tidak memindahkan bawahannya. Mereka tetap tampil di bawah {u!.nama.split(' ')[0]} pada Struktur Organisasi, dan pengajuan mereka tetap dikirim kepadanya.</div>}
+          <label>Pindahkan bawahan tersebut ke</label>
+          <select value={bawahanKe} onChange={(e) => setBawahanKe(+e.target.value)}>
+            <option value={0}>— tetap di bawah {u!.nama} —</option>
+            {list.filter((x) => x.aktif && x.id !== u!.id && !bawahan.some((b) => b.id === x.id)).map((x) => <option key={x.id} value={x.id}>{x.nama} · {x.jabatan}</option>)}</select>
+        </div>)}
       <div className="row"><div><label>Status kepegawaian</label><select value={v.statusKerja} onChange={set('statusKerja')}>
         {[['tetap', 'Tetap (PKWTT)'], ['kontrak', 'Kontrak (PKWT)'], ['probation', 'Masa percobaan'], ['magang', 'Magang'], ['harian', 'Harian lepas'], ['freelance', 'Freelance / Mitra']]
           .map(([k, t]) => <option key={k} value={k}>{t}</option>)}</select></div>

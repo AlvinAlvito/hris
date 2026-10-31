@@ -10,7 +10,9 @@ import { NAMA_BULAN } from '@/lib/klien/format';
 type Jejak = { alat: string; ket: string; ok: boolean };
 type Pesan = { role: 'user' | 'assistant'; content: string; jejak?: Jejak[]; galat?: boolean };
 const SIMPAN = 'posi.asisten.v1';
-const NAMA_ALAT: Record<string, string> = { cari_karyawan: 'Mencari karyawan', ringkasan_karyawan: 'Ringkasan karyawan', rekap_karyawan: 'Rekap kehadiran', query_sql: 'Kueri data' };
+const NAMA_ALAT: Record<string, string> = { cari_karyawan: 'Mencari karyawan', ringkasan_karyawan: 'Ringkasan karyawan', rekap_karyawan: 'Rekap kehadiran',
+  struktur_organisasi: 'Struktur organisasi', rekrutmen_lowongan: 'Lowongan rekrutmen', rekrutmen_kandidat: 'Kandidat rekrutmen',
+  rekrutmen_detail_kandidat: 'Detail kandidat', kpi_karyawan: 'KPI karyawan', kpi_rekap: 'Peringkat KPI', beban_kerja: 'Beban kerja', log_kerja_karyawan: 'Log kerja', lihat_skema: 'Daftar data', query_sql: 'Kueri data' };
 
 export default function Asisten() {
   const { me } = useAplikasi();
@@ -24,6 +26,7 @@ export default function Asisten() {
     'Ringkas performa kehadiran [nama karyawan] 3 bulan terakhir',
     'Apakah [nama karyawan] layak dipertimbangkan untuk promosi?',
     'Siapa saja yang kontraknya berakhir dalam 60 hari ke depan?',
+    'Siapa 5 kandidat terbaik untuk lowongan yang sedang dibuka?',
     'Berapa kali [nama karyawan] izin sakit tahun ini?',
   ];
 

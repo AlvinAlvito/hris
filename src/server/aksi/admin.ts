@@ -177,8 +177,27 @@ export const aksiAdmin: KumpulanAksi = {
       if (lm === 'lapangan' && (lama.base_lat === null || Number(lama.base_lat) !== baseLat)) { data.base_set_by = u.nama; data.base_set_at = sekarangSql(); }
       if (pin !== '') data.pin_hash = await bcrypt.hash(pin, 10);
       const k = Object.keys(data);
+      // bawahan langsung ikut dipindah ke atasan baru (dipilih saat divisi / jabatan orang ini berubah)
+      const keAtasan = i(m, 'pindahBawahanKe');
+      let pindah = 0;
+      if (keAtasan) {
+        if (keAtasan === id) gagal('Atasan baru bawahan tidak boleh orang yang sama');
+        const tujuan = await q1('SELECT id, nama, atasan_id FROM users WHERE id=? AND aktif=1', [keAtasan]);
+        if (!tujuan) gagal('Atasan baru untuk bawahan tidak ditemukan');
+        const bawahan = (await q('SELECT id FROM users WHERE atasan_id=? AND aktif=1', [id])).map((x) => x.id as number);
+        if (bawahan.includes(keAtasan)) gagal('Atasan baru tidak boleh salah satu dari bawahan yang dipindah');
+        // cegah struktur melingkar: atasan baru tidak boleh berada di bawah salah satu bawahan yang dipindah
+        let jalur: number | null = tujuan.atasan_id || null, langkah = 0;
+        while (jalur && langkah++ < 50) {
+          if (bawahan.includes(jalur)) gagal('Struktur melingkar: atasan baru berada di bawah salah satu bawahan yang dipindah');
+          jalur = ((await q1('SELECT atasan_id FROM users WHERE id=?', [jalur]))?.atasan_id as number) || null;
+        }
+        if (bawahan.length) pindah = (await exec(`UPDATE users SET atasan_id=? WHERE id IN (${bawahan.map(Number).join(',')})`, [keAtasan])).affectedRows;
+        if (pindah) await logAksi(u.id, 'pindah_bawahan', `${pindah} bawahan ${nama} → ${tujuan.nama}`);
+      }
       await exec(`UPDATE users SET ${k.map((x) => `${x}=:${x}`).join(',')} WHERE id=:__id`, { ...data, __id: id });
       await logAksi(u.id, 'edit_karyawan', nik);
+      if (pindah) return { pesan: `Data karyawan tersimpan · ${pindah} bawahan dipindahkan`, id };
     } else {
       if (!/^\d{4,8}$/.test(pin)) gagal('PIN harus 4–8 digit angka');
       data.pin_hash = await bcrypt.hash(pin, 10);

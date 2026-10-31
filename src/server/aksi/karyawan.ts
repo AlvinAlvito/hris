@@ -1,7 +1,8 @@
 /* Karyawan: profil lengkap, foto profil, struktur organisasi, kontrak, dokumen privat, impor Excel */
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { randomBytes, randomInt } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { PIN_AWAL } from '@/lib/pinAwal';
 import bcrypt from 'bcryptjs';
 import sharp from 'sharp';
 import { exec, nilai, q, q1, sisipkan, transaksi, type Baris } from '@/lib/db';
@@ -92,7 +93,7 @@ export const aksiKaryawan: KumpulanAksi = {
             const k = Object.keys(data);
             if (k.length) await exec(`UPDATE users SET ${k.map((x) => `${x}=:${x}`).join(',')} WHERE id=:__id`, { ...data, __id: lama.id });
           } else {
-            if (!pin) { pin = String(randomInt(100000, 1000000)); item.pin = pin; }
+            if (!pin) { pin = PIN_AWAL; item.pin = pin; }
             await sisipkan('users', { nik, jabatan: 'Staff', tgl_masuk: tglWIB(), role: 'karyawan', cabang_id: pusat, jam_mode: 'tetap',
               lokasi_mode: 'kantor', cuti_mode: 'auto', jatah, target_menit: target, ...data, pin_hash: await bcrypt.hash(pin, 10) });
           }

@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { api } from '@/lib/klien/api';
 import { keExcel } from '@/lib/klien/excel';
 import { pad, todayStr } from '@/lib/klien/format';
+import { PIN_AWAL } from '@/lib/pinAwal';
 import { useAplikasi } from './Aplikasi';
 import { Ikon } from './Ikon';
 
@@ -27,7 +28,7 @@ const KOLOM: [string, string, boolean, string, string][] = [
   ['bankNama', 'Nama Bank', false, '', ''], ['bankRekening', 'No Rekening', false, '', 'Format kolom sebagai Teks.'],
   ['bankAtasNama', 'Atas Nama Rekening', false, '', ''], ['bpjsKesNo', 'No BPJS Kesehatan', false, '', 'Format kolom sebagai Teks.'],
   ['bpjsTkNo', 'No BPJS Ketenagakerjaan', false, '', 'Format kolom sebagai Teks.'], ['peran', 'Peran', false, 'Staff', 'Staff / Supervisor / HC. Kosong = Staff.'],
-  ['pin', 'PIN', false, '', '4–8 digit angka. Kosong untuk karyawan baru = dibuat acak oleh sistem.'],
+  ['pin', 'PIN', false, '', `4–8 digit angka. Kosong untuk karyawan baru = PIN awal ${PIN_AWAL}.`],
 ];
 const KOLOM_TANGGAL = ['tglMasuk', 'kontrakMulai', 'kontrakSelesai', 'tglLahir'];
 const KOLOM_TEKS = ['nik', 'noHp', 'noKtp', 'npwp', 'bankRekening', 'bpjsKesNo', 'bpjsTkNo', 'pin'];
@@ -135,7 +136,7 @@ export function ImportKaryawan({ selesai }: { selesai: () => void }) {
     {proses && !hasil && <div className="skel" style={{ height: 90, marginTop: 14 }} />}
     {hasil && (<>
       {beres && <div className="note" style={{ marginTop: 14 }}><Ikon n="circle-check" /> <b>{valid} data tersimpan.</b>
-        {pinBaru.length > 0 && ` ${pinBaru.length} karyawan baru mendapat PIN acak — unduh daftarnya dan bagikan ke masing-masing.`}</div>}
+        {pinBaru.length > 0 && ` ${pinBaru.length} karyawan baru mendapat PIN awal ${PIN_AWAL} — minta mereka segera menggantinya di Profil → Akun.`}</div>}
       <div className="imp-ringkas">{['baru', 'perbarui', 'gagal'].map((a) => <span key={a} className={'badge ' + warna[a]}>{n(a)} {label[a].toLowerCase()}</span>)}</div>
       <div className="tblwrap" style={{ maxHeight: '46vh' }}><table style={{ minWidth: 560 }}><thead><tr><th>Baris</th><th>NIK</th><th>Nama</th><th>Status</th>
         {beres && pinBaru.length > 0 && <th>PIN</th>}<th>Keterangan</th></tr></thead><tbody>

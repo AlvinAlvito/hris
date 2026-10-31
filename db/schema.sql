@@ -557,6 +557,202 @@ CREATE TABLE IF NOT EXISTS push_langganan (
   CONSTRAINT fk_push_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- =====================================================================
+-- REKRUTMEN: lowongan (portal publik /rekrutmen), lamaran pelamar, riwayat pipeline
+-- CV disimpan di storage/private/rekrutmen dan hanya bisa dibuka HC.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS lowongan (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  judul       VARCHAR(150) NOT NULL,
+  divisi      VARCHAR(100) NOT NULL DEFAULT '',
+  lokasi      VARCHAR(150) NOT NULL DEFAULT '',
+  tipe        ENUM('tetap','kontrak','magang','freelance','paruh_waktu') NOT NULL DEFAULT 'kontrak',
+  deskripsi   TEXT,
+  kualifikasi TEXT,                                   -- syarat wajib, satu per baris
+  nilai_plus  TEXT,                                   -- nilai tambah, satu per baris
+  pertanyaan  TEXT,                                   -- pertanyaan tambahan untuk pelamar (JSON array)
+  kuota       INT NOT NULL DEFAULT 1,
+  batas       DATE NULL,                              -- batas akhir lamaran (kosong = sampai ditutup)
+  status      ENUM('draf','buka','tutup') NOT NULL DEFAULT 'draf',
+  dibuat_oleh INT NULL,
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS lamaran (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  lowongan_id  INT NOT NULL,
+  kode         VARCHAR(20) NOT NULL,
+  nama         VARCHAR(150) NOT NULL,
+  email        VARCHAR(150) NOT NULL,
+  no_hp        VARCHAR(30)  NOT NULL,
+  domisili     VARCHAR(120) NOT NULL DEFAULT '',
+  pendidikan   VARCHAR(40)  NOT NULL DEFAULT '',
+  jurusan      VARCHAR(100) NOT NULL DEFAULT '',
+  pengalaman   VARCHAR(30)  NOT NULL DEFAULT '',     -- lama pengalaman kerja (isian pelamar)
+  kerja_terakhir VARCHAR(150) NOT NULL DEFAULT '',   -- posisi & tempat kerja terakhir (isian pelamar)
+  tautan       VARCHAR(300) NOT NULL DEFAULT '',     -- portofolio / LinkedIn
+  jawaban      TEXT,                                 -- jawaban pertanyaan tambahan (JSON)
+  cv_path      VARCHAR(200) NOT NULL,
+  cv_nama      VARCHAR(200) NOT NULL DEFAULT '',
+  cv_mime      VARCHAR(100) NOT NULL DEFAULT '',
+  cv_teks      MEDIUMTEXT,                           -- teks hasil ekstraksi CV
+  ai_status    ENUM('antri','proses','selesai','gagal','manual') NOT NULL DEFAULT 'antri',
+  ai_percobaan TINYINT NOT NULL DEFAULT 0,
+  ai_galat     VARCHAR(255) NOT NULL DEFAULT '',
+  profil       TEXT,                                 -- profil terstruktur hasil AI (JSON)
+  analisis     TEXT,                                 -- penilaian AI: skor rinci, kekuatan, kekurangan, dll. (JSON)
+  skor         TINYINT UNSIGNED NULL,                -- 0..100 kecocokan dengan lowongan
+  kecocokan    VARCHAR(20) NOT NULL DEFAULT '',
+  tahap        ENUM('baru','disaring','tes','wawancara_hc','wawancara_user','penawaran','diterima','ditolak') NOT NULL DEFAULT 'baru',
+  rating_hc    TINYINT NULL,                         -- penilaian HC 1..5
+  user_id      INT NULL,                             -- akun karyawan bila sudah dijadikan karyawan
+  ip           VARCHAR(45) NOT NULL DEFAULT '',
+  diproses_at  DATETIME NULL,
+  created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_lamaran_kode (kode),
+  INDEX (lowongan_id, tahap), INDEX (ai_status), INDEX (email), INDEX (created_at),
+  CONSTRAINT fk_lamaran_lowongan FOREIGN KEY (lowongan_id) REFERENCES lowongan(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS lamaran_riwayat (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  lamaran_id  INT NOT NULL,
+  jenis       ENUM('tahap','catatan','sistem') NOT NULL DEFAULT 'catatan',
+  dari        VARCHAR(20) NOT NULL DEFAULT '',
+  ke          VARCHAR(20) NOT NULL DEFAULT '',
+  catatan     VARCHAR(1000) NOT NULL DEFAULT '',
+  oleh        INT NULL,
+  oleh_nama   VARCHAR(150) NOT NULL DEFAULT '',
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX (lamaran_id),
+  CONSTRAINT fk_riwayat_lamaran FOREIGN KEY (lamaran_id) REFERENCES lamaran(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- =====================================================================
+-- KPI: template per jabatan → laporan bulanan per karyawan (lapor sendiri, diverifikasi atasan / HC)
+-- Target & bobot disalin ke laporan saat dibuat, sehingga perubahan template tidak mengubah bulan yang sudah final.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS kpi_template (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  nama        VARCHAR(120) NOT NULL,
+  jabatan     TEXT,                                  -- daftar jabatan yang otomatis memakai template ini (JSON array)
+  keterangan  VARCHAR(500) NOT NULL DEFAULT '',
+  aktif       TINYINT(1) NOT NULL DEFAULT 1,
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS kpi_indikator (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  template_id INT NOT NULL,
+  nama        VARCHAR(150) NOT NULL,
+  deskripsi   VARCHAR(500) NOT NULL DEFAULT '',
+  satuan      VARCHAR(30)  NOT NULL DEFAULT '',
+  target      DECIMAL(14,2) NOT NULL DEFAULT 0,
+  bobot       DECIMAL(5,2)  NOT NULL DEFAULT 0,      -- persen; total per template = 100
+  arah        ENUM('naik','turun','ya_tidak') NOT NULL DEFAULT 'naik',
+  sumber      ENUM('manual','kehadiran','tepat_waktu','utilisasi','log_selesai','log_persen_selesai','log_kelengkapan') NOT NULL DEFAULT 'manual',
+  urut        INT NOT NULL DEFAULT 0,
+  INDEX (template_id),
+  CONSTRAINT fk_kpi_ind_template FOREIGN KEY (template_id) REFERENCES kpi_template(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- template khusus untuk karyawan tertentu (mengalahkan pencocokan jabatan)
+CREATE TABLE IF NOT EXISTS kpi_penugasan (
+  user_id     INT PRIMARY KEY,
+  template_id INT NOT NULL,
+  CONSTRAINT fk_kpi_tugas_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_kpi_tugas_template FOREIGN KEY (template_id) REFERENCES kpi_template(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS kpi_lapor (
+  id            INT AUTO_INCREMENT PRIMARY KEY,
+  user_id       INT NOT NULL,
+  periode       CHAR(7) NOT NULL,                    -- YYYY-MM
+  template_id   INT NULL,
+  template_nama VARCHAR(120) NOT NULL DEFAULT '',
+  status        ENUM('draf','diajukan','disetujui','dikembalikan') NOT NULL DEFAULT 'draf',
+  skor          DECIMAL(6,2) NULL,
+  predikat      VARCHAR(30) NOT NULL DEFAULT '',
+  catatan       VARCHAR(1000) NOT NULL DEFAULT '',   -- catatan karyawan saat mengajukan
+  catatan_verifikator VARCHAR(1000) NOT NULL DEFAULT '',
+  diajukan_at   DATETIME NULL,
+  diverifikasi_oleh VARCHAR(150) NOT NULL DEFAULT '',
+  diverifikasi_at   DATETIME NULL,
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_kpi_lapor (user_id, periode),
+  INDEX (periode, status),
+  CONSTRAINT fk_kpi_lapor_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS kpi_nilai (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  lapor_id    INT NOT NULL,
+  indikator_id INT NULL,
+  nama        VARCHAR(150) NOT NULL,
+  deskripsi   VARCHAR(500) NOT NULL DEFAULT '',
+  satuan      VARCHAR(30)  NOT NULL DEFAULT '',
+  target      DECIMAL(14,2) NOT NULL DEFAULT 0,
+  bobot       DECIMAL(5,2)  NOT NULL DEFAULT 0,
+  arah        ENUM('naik','turun','ya_tidak') NOT NULL DEFAULT 'naik',
+  sumber      ENUM('manual','kehadiran','tepat_waktu','utilisasi','log_selesai','log_persen_selesai','log_kelengkapan') NOT NULL DEFAULT 'manual',
+  urut        INT NOT NULL DEFAULT 0,
+  realisasi   DECIMAL(14,2) NULL,
+  bukti       VARCHAR(1000) NOT NULL DEFAULT '',     -- tautan bukti (Drive, foto, laporan)
+  keterangan  VARCHAR(500) NOT NULL DEFAULT '',
+  pencapaian  DECIMAL(6,2) NULL,                     -- persen, dibatasi 0..120
+  INDEX (lapor_id),
+  CONSTRAINT fk_kpi_nilai_lapor FOREIGN KEY (lapor_id) REFERENCES kpi_lapor(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- =====================================================================
+-- LOG KERJA & BEBAN KERJA: to-do / catatan pekerjaan harian karyawan
+-- Utilisasi = total durasi ÷ kapasitas (hari kerja dari jadwal, dikurangi libur, cuti, izin)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS log_kategori (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  nama        VARCHAR(80) NOT NULL,
+  divisi      VARCHAR(100) NOT NULL DEFAULT '',      -- kosong = berlaku untuk semua divisi
+  aktif       TINYINT(1) NOT NULL DEFAULT 1,
+  urut        INT NOT NULL DEFAULT 0,
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS log_kerja (
+  id            INT AUTO_INCREMENT PRIMARY KEY,
+  user_id       INT NOT NULL,
+  tanggal       DATE NOT NULL,
+  kategori_id   INT NULL,
+  kategori_nama VARCHAR(80) NOT NULL DEFAULT '',     -- salinan nama kategori saat dicatat
+  uraian        VARCHAR(500) NOT NULL,
+  jam_mulai     TIME NULL,
+  jam_selesai   TIME NULL,
+  durasi_menit  INT NOT NULL DEFAULT 0,
+  status        ENUM('rencana','proses','selesai','tertunda') NOT NULL DEFAULT 'selesai',
+  keterangan    VARCHAR(500) NOT NULL DEFAULT '',
+  tautan        VARCHAR(1000) NOT NULL DEFAULT '',
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX (user_id, tanggal), INDEX (tanggal),
+  CONSTRAINT fk_logkerja_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- komentar atasan / HC pada satu catatan pekerjaan
+CREATE TABLE IF NOT EXISTS log_komentar (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  log_id      INT NOT NULL,
+  oleh        INT NULL,
+  oleh_nama   VARCHAR(150) NOT NULL DEFAULT '',
+  isi         VARCHAR(1000) NOT NULL,
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX (log_id),
+  CONSTRAINT fk_logkom_log FOREIGN KEY (log_id) REFERENCES log_kerja(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS settings (
   k VARCHAR(50) PRIMARY KEY,
   v TEXT
