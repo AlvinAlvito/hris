@@ -475,6 +475,7 @@ td.r,th.r{text-align:right}
 .slip h4{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#6b7f9c;margin:18px 0 6px}
 .slip table{min-width:0;font-size:12.5px;background:#fff}
 .slip td{border-bottom:1px dashed #e1e9f3;padding:6px 4px;white-space:normal;color:#0d1f3c}
+.slip tbody tr:hover td{background:#fff}
 .slip .tot td{font-weight:800;border-bottom:0;border-top:2px solid #0e2a55}
 .slip .thp{margin-top:16px;padding:14px 16px;border-radius:14px;background:#e8f3fd;display:flex;justify-content:space-between;align-items:center}
 .slip .thp b{font-size:22px;color:#0e2a55}

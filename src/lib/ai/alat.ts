@@ -150,9 +150,14 @@ async function rekapKaryawan(a: Baris) {
   const ringkas = (x: Baris) => ({ user_id: x.user_id, nama: x.nama, divisi: x.divisi, hadir: x.hadir, wajib: x.hari_wajib_kerja, persen: x.persen_kehadiran,
     telat_kali: x.terlambat_kali, telat_menit: x.total_menit_terlambat, setengah: x.setengah_hari_tanpa_izin, mangkir: x.mangkir_hari, izin: x.izin_disetujui_hari,
     cuti: x.cuti_hari, rata_masuk: x.rata_jam_masuk });
+  const orang = (f: (x: Baris) => boolean) => st.filter(f).length;
   return { periode: { dari, sampai, catatan }, divisi: divisi || 'semua', jumlah_karyawan: st.length,
-    ringkasan: { persen_kehadiran_rata2: tot.wajib ? Math.round((tot.hadir / tot.wajib) * 1000) / 10 : null, total_terlambat_kali: tot.telat, total_mangkir_hari: tot.mangkir },
-    urutan: urut, keterangan_kolom: 'wajib=hari kerja wajib; persen=kehadiran tanpa menghitung cuti/izin; setengah=setengah hari tanpa izin', data: st.slice(0, batas).map(ringkas) };
+    ringkasan: { persen_kehadiran_rata2: tot.wajib ? Math.round((tot.hadir / tot.wajib) * 1000) / 10 : null, total_hari_hadir: tot.hadir, total_terlambat_kali: tot.telat, total_mangkir_hari: tot.mangkir,
+      jumlah_orang: { hadir: orang((x) => x.hadir > 0), terlambat: orang((x) => x.terlambat_kali > 0), cuti: orang((x) => x.cuti_hari > 0), izin: orang((x) => x.izin_disetujui_hari > 0),
+        mangkir: orang((x) => x.mangkir_hari > 0), belum_absen_hari_ini: orang((x) => x.belum_absen_hari_ini > 0), libur: orang((x) => x.libur_hari > 0) } },
+    urutan: urut, keterangan_kolom: 'wajib=hari kerja wajib; persen=kehadiran tanpa menghitung cuti/izin; setengah=setengah hari tanpa izin; jumlah_orang=karyawan yang mengalami status itu minimal sehari pada periode (bisa tumpang tindih bila periode lebih dari sehari)',
+    ...(st.length > batas ? { catatan_data: `Kolom data hanya memuat ${batas} dari ${st.length} karyawan menurut urutan ${urut}, bukan seluruh karyawan. Untuk jumlah/total pakai ringkasan.` } : {}),
+    data: st.slice(0, batas).map(ringkas) };
 }
 
 /* struktur organisasi persis seperti halaman Struktur Organisasi: disusun dari atasan langsung tiap karyawan */

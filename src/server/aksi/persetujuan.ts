@@ -15,6 +15,8 @@ import { hasilHalaman, paramHalaman, polaCari } from '@/lib/paginasi';
 
 const PENYETUJU = ['admin', 'atasan'];
 const tglIdn = (t: string) => String(t).split('-').reverse().join('/');
+// filter "Menunggu HR" juga memuat yang menunggu rekomendasi atasan, sama seperti angka di kartu Persetujuan
+const SEMUA_MENUNGGU = "IN ('Menunggu HR','Menunggu Rekomendasi')";
 
 export const aksiPersetujuan: KumpulanAksi = {
   /* ---------- cuti ---------- */
@@ -61,7 +63,8 @@ export const aksiPersetujuan: KumpulanAksi = {
     const u = await need(PENYETUJU), tim = await cakupanTim(u);
     const status = s(m, 'status', 'Menunggu HR');
     const h = paramHalaman(m), cond: string[] = [], p: unknown[] = [];
-    if (status !== 'ALL') { cond.push('p.status=?'); p.push(status); }
+    if (status === 'Menunggu HR') cond.push('p.status ' + SEMUA_MENUNGGU);
+    else if (status !== 'ALL') { cond.push('p.status=?'); p.push(status); }
     if (h.cari) { cond.push('(u.nama LIKE ? OR u.nik LIKE ? OR p.jenis LIKE ? OR p.alasan LIKE ?)'); p.push(...Array(4).fill(polaCari(h.cari))); }
     const where = (cond.length ? ' WHERE ' + cond.join(' AND ') : ' WHERE 1') + sqlCakupan(tim, 'p.user_id');
     const from = ' FROM pengajuan p JOIN users u ON u.id=p.user_id LEFT JOIN cabang c ON c.id=u.cabang_id' + where;
@@ -129,7 +132,8 @@ export const aksiPersetujuan: KumpulanAksi = {
     const u = await need(PENYETUJU), tim = await cakupanTim(u);
     const status = s(m, 'status', 'Menunggu HR');
     const h = paramHalaman(m), cond: string[] = [], p: unknown[] = [];
-    if (status !== 'ALL') { cond.push('k.status=?'); p.push(status); }
+    if (status === 'Menunggu HR') cond.push('k.status ' + SEMUA_MENUNGGU);
+    else if (status !== 'ALL') { cond.push('k.status=?'); p.push(status); }
     if (h.cari) { cond.push('(u.nama LIKE ? OR u.nik LIKE ? OR k.jenis LIKE ? OR k.alasan LIKE ?)'); p.push(...Array(4).fill(polaCari(h.cari))); }
     const where = (cond.length ? ' WHERE ' + cond.join(' AND ') : ' WHERE 1') + sqlCakupan(tim, 'k.user_id');
     const from = ' FROM ketidakhadiran k JOIN users u ON u.id=k.user_id LEFT JOIN cabang c ON c.id=u.cabang_id' + where;
