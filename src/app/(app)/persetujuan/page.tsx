@@ -13,7 +13,7 @@ import { keExcel } from '@/lib/klien/excel';
 import { jamKerjaTeks, teksStatus, tglPendek, todayStr } from '@/lib/klien/format';
 
 type Data = Record<string, any>;
-const TUJUAN: Record<string, string> = { cuti: '/cuti', payroll: '/payroll', lupa: '/absensi', absen: '/absensi', kontrak: '/karyawan', rekrutmen: '/kelola-rekrutmen', kpi: '/kelola-kpi' };
+const TUJUAN: Record<string, string> = { cuti: '/cuti', payroll: '/payroll', lupa: '/absensi', absen: '/absensi?menunggu=1', kontrak: '/karyawan', rekrutmen: '/kelola-rekrutmen', kpi: '/kelola-kpi' };
 const INLINE = ['pengajuan', 'ket'];
 
 function Status({ st }: { st: string }) {

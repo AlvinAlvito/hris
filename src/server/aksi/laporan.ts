@@ -1,7 +1,7 @@
-/* Laporan HC: absensi per tanggal / rentang tanggal, dan cuti per pegawai */
+/* Laporan: absensi per tanggal / rentang tanggal (HC), cuti per pegawai dan lembur per pegawai (HC semua, Supervisor timnya) */
 import { q, q1, type Baris } from '@/lib/db';
 import { gagal, i, s } from '@/lib/http';
-import { cutiAktif, cutiPending, cutiTerpakai, jadwalHari, jatahCuti, KET_TETAP_KERJA, labelKet, need } from '@/lib/aturan';
+import { cakupanTim, cutiAktif, cutiPending, cutiTerpakai, jadwalHari, jatahCuti, KET_TETAP_KERJA, labelKet, need, sqlCakupan } from '@/lib/aturan';
 import { setg } from '@/lib/pengaturan';
 import { epoch, jamWIB, POLA_TGL, tambahHari, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
@@ -84,10 +84,36 @@ export const aksiLaporan: KumpulanAksi = {
   },
 
   /* jatah, pemakaian, sisa cuti tahunan & tanggal cuti yang diambil, per pegawai */
+  async lap_lembur(m) {
+    const u = await need(['atasan']), tim = await cakupanTim(u);
+    const kini = tglWIB(), dari = s(m, 'dari', kini.slice(0, 8) + '01'), sampai = s(m, 'sampai', kini);
+    if (!POLA_TGL.test(dari) || !POLA_TGL.test(sampai) || sampai < dari) gagal('Rentang tanggal tidak sah');
+    if ((epoch(sampai) - epoch(dari)) / 86400 > 366) gagal('Rentang paling panjang satu tahun');
+    const pg = paramHalaman(m), cariSql = pg.cari ? ' AND (x.nama LIKE ? OR x.nik LIKE ? OR x.dept LIKE ?)' : '';
+    const args: unknown[] = [dari, sampai, ...(pg.cari ? Array(3).fill(polaCari(pg.cari)) : [])];
+    const sumber = `FROM pengajuan p JOIN users x ON x.id=p.user_id
+      WHERE p.jenis='lembur' AND p.status<>'Dibatalkan' AND p.tanggal BETWEEN ? AND ?${cariSql}${sqlCakupan(tim, 'p.user_id')}`;
+    const setuju = "p.status='Disetujui'", tunggu = "p.status IN ('Menunggu HR','Menunggu Rekomendasi')";
+    const ang = `COALESCE(SUM(IF(${setuju},p.menit,0)),0) menit_setuju, COALESCE(SUM(${setuju}),0) n_setuju, COALESCE(SUM(IF(${tunggu},p.menit,0)),0) menit_tunggu,
+      COALESCE(SUM(${tunggu}),0) n_tunggu, COALESCE(SUM(p.status LIKE 'Ditolak%'),0) n_tolak`;
+    const tot = await q1(`SELECT COUNT(DISTINCT p.user_id) orang, ${ang} ${sumber}`, args);
+    const baris = await q(`SELECT p.user_id, x.nik, x.nama, x.dept, x.jabatan, ${ang} ${sumber} GROUP BY p.user_id ORDER BY menit_setuju DESC, x.nama` + (m.all ? '' : ' LIMIT ? OFFSET ?'),
+      m.all ? args : [...args, pg.limit, pg.offset]);
+    const ids = baris.map((x) => Number(x.user_id)).join(',') || '0';
+    const detail: Record<number, Baris[]> = {};
+    for (const r of await q(`SELECT p.user_id, p.tanggal, p.jam_mulai, p.jam_selesai, p.menit, p.alasan, p.status, p.approver FROM pengajuan p
+      WHERE p.jenis='lembur' AND p.status<>'Dibatalkan' AND p.tanggal BETWEEN ? AND ? AND p.user_id IN (${ids}) ORDER BY p.tanggal DESC, p.id DESC`, [dari, sampai]))
+      (detail[r.user_id] ??= []).push({ tanggal: r.tanggal, jamMulai: String(r.jam_mulai ?? '').slice(0, 5), jamSelesai: String(r.jam_selesai ?? '').slice(0, 5), menit: Number(r.menit), alasan: r.alasan, status: r.status, approver: r.approver });
+    const items = baris.map((x) => ({ userId: x.user_id, nik: x.nik, nama: x.nama, divisi: x.dept, jabatan: x.jabatan, menitDisetujui: Number(x.menit_setuju), jumlahDisetujui: Number(x.n_setuju),
+      menitMenunggu: Number(x.menit_tunggu), jumlahMenunggu: Number(x.n_tunggu), jumlahDitolak: Number(x.n_tolak), rincian: detail[x.user_id] ?? [] }));
+    if (m.all) return items;
+    return { ...hasilHalaman(items, Number(tot?.orang ?? 0), pg.page), ringkas: { orang: Number(tot?.orang ?? 0), menitDisetujui: Number(tot?.menit_setuju ?? 0), menitMenunggu: Number(tot?.menit_tunggu ?? 0), jumlahMenunggu: Number(tot?.n_tunggu ?? 0) } };
+  },
+
   async lap_cuti(m) {
-    await need(['admin']);
+    const u0 = await need(['atasan']), tim = await cakupanTim(u0);
     const th = i(m, 'tahun', Number(tglWIB().slice(0, 4)));
-    const pg = paramHalaman(m), cariSql = pg.cari ? ' AND (nama LIKE ? OR nik LIKE ? OR dept LIKE ?)' : '';
+    const pg = paramHalaman(m), cariSql = (pg.cari ? ' AND (nama LIKE ? OR nik LIKE ? OR dept LIKE ?)' : '') + sqlCakupan(tim, 'id');
     const args: any[] = pg.cari ? Array(3).fill(polaCari(pg.cari)) : [];
     const count = await q1("SELECT COUNT(*) n FROM users WHERE aktif=1 AND role<>'direktur'" + cariSql, args);
     const users = await q("SELECT * FROM users WHERE aktif=1 AND role<>'direktur'" + cariSql + ' ORDER BY dept, nama' + (m.all ? '' : ' LIMIT 8 OFFSET ?'), m.all ? args : [...args, pg.offset]);

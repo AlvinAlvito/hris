@@ -1,7 +1,7 @@
 /* Kelola: dashboard harian, lokasi kerja, karyawan, absensi & koreksi, rekap bulanan, pengaturan, log */
 import bcrypt from 'bcryptjs';
 import { exec, nilai, q, q1, sisipkan, type Baris } from '@/lib/db';
-import { f, gagal, i, s } from '@/lib/http';
+import { b, f, gagal, i, s } from '@/lib/http';
 import {
   batasJamTerbuka, cabangPublik, cakupanTim, cutiAktif, jadwalHari, jamKerjaHari, jamTeks, labelKet, logAksi, need, sisaCuti, sqlCakupan,
 } from '@/lib/aturan';
@@ -214,6 +214,9 @@ export const aksiAdmin: KumpulanAksi = {
     const t = await q1('SELECT * FROM users WHERE id=?', [id]);
     if (!t) gagal('Karyawan tidak ditemukan');
     if (t.role === 'direktur' && Number(await nilai("SELECT COUNT(*) FROM users WHERE role='direktur'")) < 2) gagal('Minimal harus ada satu akun Super Admin');
+    // bawahan yang ditinggal tanpa atasan membuat pengajuannya tidak sampai ke Supervisor
+    const bawahan = await q('SELECT nama FROM users WHERE atasan_id=? AND aktif=1 ORDER BY nama', [id]);
+    if (bawahan.length) gagal(`${t.nama} masih menjadi atasan langsung ${bawahan.length} karyawan (${bawahan.slice(0, 3).map((x) => x.nama).join(', ')}${bawahan.length > 3 ? ', dll' : ''}). Pindahkan dulu atasan mereka di menu Karyawan.`);
     await exec('DELETE FROM users WHERE id=?', [id]);
     await logAksi(u.id, 'hapus_karyawan', t.nik);
     return { pesan: 'Karyawan dihapus' };
@@ -227,8 +230,11 @@ export const aksiAdmin: KumpulanAksi = {
     const d = mt ? new Date(Date.UTC(+mt[1], +mt[2] - 1, +mt[3])) : null;
     const tanggalValid = !!mt && d!.getUTCFullYear() === +mt[1] && d!.getUTCMonth() + 1 === +mt[2] && d!.getUTCDate() === +mt[3];
     const h = paramHalaman(m);
-    let where = ' WHERE ' + (tanggalValid ? 'a.tanggal=?' : 'YEAR(a.tanggal)=? AND MONTH(a.tanggal)=?');
-    const p: unknown[] = tanggalValid ? [tanggal] : [th, bl];
+    // semua yang menunggu lintas tanggal: cakupannya sama dengan kartu di menu Persetujuan
+    const lintas = b(m, 'menungguSemua');
+    let where = ' WHERE ' + (lintas ? "a.approval='menunggu' AND a.in_time IS NOT NULL AND a.tanggal >= DATE_SUB(CURDATE(), INTERVAL 31 DAY) AND a.user_id<>?"
+      : tanggalValid ? 'a.tanggal=?' : 'YEAR(a.tanggal)=? AND MONTH(a.tanggal)=?');
+    const p: unknown[] = lintas ? [saya.id] : tanggalValid ? [tanggal] : [th, bl];
     if (uid) { where += ' AND a.user_id=?'; p.push(uid); }
     if (cid) { where += ' AND u.cabang_id=?'; p.push(cid); }
     if (h.cari) { where += ' AND (u.nama LIKE ? OR u.nik LIKE ? OR u.dept LIKE ?)'; p.push(polaCari(h.cari), polaCari(h.cari), polaCari(h.cari)); }
@@ -240,7 +246,9 @@ export const aksiAdmin: KumpulanAksi = {
     const total = Number(await nilai('SELECT COUNT(*)' + sumber, p));
     const rows = await q('SELECT a.*, u.nik,u.nama,u.dept' + sumber + ' ORDER BY a.tanggal DESC, u.nama' + (m.all ? '' : ' LIMIT ? OFFSET ?'), m.all ? p : [...p, h.limit, h.offset]);
     const items = rows.map(absRow);
-    return m.all ? items : hasilHalaman(items, total, h.page);
+    if (m.all) return items;
+    const menunggu = Number(await nilai("SELECT COUNT(*)" + sumber + " AND a.approval='menunggu' AND a.in_time IS NOT NULL AND a.user_id<>?", [...p, saya.id]));
+    return { ...hasilHalaman(items, total, h.page), menunggu };
   },
   async adm_lupa_out(m) {
     const saya = await need(['atasan']), tim = await cakupanTim(saya);

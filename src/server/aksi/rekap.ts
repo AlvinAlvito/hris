@@ -20,6 +20,7 @@ export const aksiRekap: KumpulanAksi = {
     const id = i(m, 'id'), setuju = b(m, 'setuju'), catatan = s(m, 'catatan').slice(0, 255);
     const a = await q1('SELECT a.*, x.nama, x.nik FROM absensi a JOIN users x ON x.id=a.user_id WHERE a.id=?', [id]);
     if (!a) gagal('Data absensi tidak ditemukan');
+    if (!a.in_time) gagal('Karyawan belum clock in pada tanggal itu');
     await pastikanDalamCakupan(u, a.user_id);
     if (!setuju && !catatan) gagal('Tuliskan alasan penolakan — terlihat oleh karyawan');
     await exec('UPDATE absensi SET approval=?, approval_oleh=?, approval_catatan=?, tgl_approval=NOW() WHERE id=?',

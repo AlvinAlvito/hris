@@ -15,23 +15,28 @@ import { jamKerjaTeks, km, labelRole, NAMA_BULAN, NAMA_HARI, pad, tglPendek, tod
 type Data = Record<string, any>;
 
 export default function Absensi() {
-  const { me, bukaSheet, tanya, yakin, toast, galat, muatInbox } = useAplikasi();
+  const { me, inbox, bukaSheet, tanya, yakin, toast, galat, muatInbox } = useAplikasi();
   const admin = isAdminUp(me);
   const [tgl, setTgl] = useState(todayStr());
+  // null = alamat belum dibaca; true = semua yang menunggu lintas tanggal, sama seperti kartu di menu Persetujuan
+  const [lintas, setLintas] = useState<boolean | null>(null);
+  useEffect(() => { setLintas(new URLSearchParams(window.location.search).has('menunggu')); }, []);
   const [filter, setFilterAsli] = useState<FilterRingkasan>({}), [pilih, setPilih] = useState<Set<number>>(() => new Set()), [segar, setSegar] = useState(0);
   const [cab, setCab] = useState(0), [uid, setUid] = useState(0);
-  const [data, setData] = useState<HalamanData<Data> | null>(null), [lupa, setLupa] = useState<Data[]>([]);
+  const [data, setData] = useState<(HalamanData<Data> & { menunggu?: number }) | null>(null), [lupa, setLupa] = useState<Data[]>([]);
   const [cari, setCari] = useState(''), [page, setPage] = useState(1);
   const [users, setUsers] = useState<Data[]>([]), [cabang, setCabang] = useState<Data[]>([]);
   const lihatFoto = useLihatFoto();
   const setFilter = (f: FilterRingkasan) => { setFilterAsli(f); setPage(1); };
 
+  const saringan = useCallback(() => ({ tanggal: tgl, userId: uid, cabangId: cab, search: cari, ...filter, ...(lintas ? { menungguSemua: 1 } : {}) }), [tgl, uid, cab, cari, filter, lintas]);
   const muat = useCallback(() => {
+    if (lintas === null) return;
     setData(null);
     setPilih(new Set());
-    api<HalamanData<Data>>('adm_absensi', { tanggal: tgl, userId: uid, cabangId: cab, search: cari, page, ...filter }).then(setData).catch(galat);
+    api<HalamanData<Data> & { menunggu?: number }>('adm_absensi', { ...saringan(), page }).then(setData).catch(galat);
     api<Data[]>('adm_lupa_out', { cabangId: cab }, true).then(setLupa).catch(() => {});
-  }, [tgl, uid, cab, cari, page, filter, galat]);
+  }, [saringan, lintas, page, galat]);
   useEffect(() => { muat(); }, [muat]);
   useEffect(() => {
     if (admin) api<Data[]>('adm_users', {}, true).then(setUsers).catch(() => {});
@@ -52,9 +57,18 @@ export default function Absensi() {
     api<{ pesan: string }>('abs_hapus', { id: a.id }).then((r) => { toast(r.pesan); segarkan(); }).catch(galat);
   };
   const setujuiTerpilih = () => api<{ pesan: string }>('abs_putus_massal', { ids: [...pilih] }).then((r) => { toast(r.pesan); segarkan(); }).catch(galat);
+  const setujuiSemua = async () => {
+    const n = data?.menunggu ?? 0;
+    if (!(await yakin(`Setujui ${n} absensi yang menunggu?`, lintas ? 'Mencakup semua tanggal dalam 31 hari terakhir pada daftar ini, termasuk halaman berikutnya.' : 'Mencakup semua halaman pada tanggal dan saringan ini.', { ya: 'Setujui semua' }))) return;
+    try {
+      const baris = await api<Data[]>('adm_absensi', { ...saringan(), all: true });
+      const r = await api<{ pesan: string }>('abs_putus_massal', { ids: baris.filter((a) => a.approval === 'menunggu' && bolehPutus(a)).map((a) => a.id) });
+      toast(r.pesan); segarkan();
+    } catch (e) { galat(e); }
+  };
   const ubahPilih = (id: number) => setPilih((x) => { const b = new Set(x); if (b.has(id)) b.delete(id); else b.add(id); return b; });
 
-  const eksporDetail = () => api<Data[]>('adm_absensi', { tanggal: tgl, userId: uid, cabangId: cab, search: cari, all: true }).then((rows) => keExcel(rows.map((a) => ({
+  const eksporDetail = () => api<Data[]>('adm_absensi', { tanggal: tgl, userId: uid, cabangId: cab, search: cari, all: true, ...(lintas ? { menungguSemua: 1 } : {}) }).then((rows) => keExcel(rows.map((a) => ({
     Tanggal: a.tanggal, Hari: NAMA_HARI[new Date(a.tanggal + 'T00:00:00').getDay()], NIK: a.nik, Nama: a.nama, 'Lokasi Kerja': a.cabangNama || '', Divisi: a.dept,
     'Mode Absen': a.mode, 'Kerja Dari': a.kerjaDari === 'wfh' ? 'WFH' : a.kerjaDari === 'dlk' ? 'Dinas Luar Kota' : 'Kantor', 'Pola Jam': a.jamMode, Shift: a.shiftNama || '',
     'Jadwal Masuk': a.jadwalIn || '', 'Jadwal Pulang': a.jadwalOut || '', 'Target (jam)': a.targetMenit ? +(a.targetMenit / 60).toFixed(2) : '',
@@ -77,9 +91,15 @@ export default function Absensi() {
 
   const l = data?.items ?? [];
   const bisaPilih = l.filter((a) => a.approval === 'menunggu' && bolehPutus(a));
+  const menungguSemua = inbox.semua.find((x) => x.kunci === 'absen')?.jumlah ?? 0;
+  const keLintas = (v: boolean) => { setLintas(v); setFilterAsli({}); setPage(1); };
   return (<>
-    <RingkasanAbsensi tanggal={tgl} cabangId={cab} filter={filter} setFilter={setFilter} segar={segar} />
-    {lupa.length > 0 && (
+    {!lintas && menungguSemua > 0 && (
+      <div className="warn" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <span><b>{menungguSemua} absensi menunggu persetujuan</b> dalam 31 hari terakhir, bisa di tanggal atau halaman lain.</span>
+        <button className="btn sm auto" onClick={() => keLintas(true)}><Ikon n="fingerprint" />Tampilkan semua</button></div>)}
+    {!lintas && <RingkasanAbsensi tanggal={tgl} cabangId={cab} filter={filter} setFilter={setFilter} segar={segar} />}
+    {!lintas && lupa.length > 0 && (
       <div className="card" style={{ borderColor: 'var(--danger)' }}><h3><Ikon n="clock-alert" />Lupa Clock Out ({lupa.length})</h3>
         <div className="note">Karyawan berikut clock in tapi tidak pernah clock out. Mereka <b>tetap bisa absen seperti biasa</b> — baris ini menunggu pengajuan lupa clock out atau koreksi HC.</div>
         <div className="ra-gulir">{lupa.map((a) => (
@@ -89,15 +109,17 @@ export default function Absensi() {
             {admin ? <button className="btn sm auto" style={{ marginTop: 8 }} onClick={() => koreksi(a)}>Isi jam pulang</button>
               : <div className="tiny muted" style={{ marginTop: 6 }}>Minta karyawan mengajukan <b>Lupa Clock Out</b>, lalu setujui di menu Persetujuan.</div>}</div>))}</div>
       </div>)}
-    <div className="card"><h3><Ikon n="fingerprint" />Rekap Absensi</h3>
+    <div className="card"><h3><Ikon n="fingerprint" />{lintas ? 'Semua Absensi Menunggu Persetujuan' : 'Rekap Absensi'}</h3>
+      {lintas && <div className="note" style={{ marginBottom: 10 }}>Menampilkan semua absensi yang belum diputus dalam 31 hari terakhir, dari semua tanggal.{' '}
+        <button className="btn ghost sm auto" onClick={() => keLintas(false)}><Ikon n="x" />Kembali ke per tanggal</button></div>}
       <div className="lap-filter">
-        <div><label style={{ marginTop: 0 }}>Tanggal absensi</label><input type="date" value={tgl} onChange={(e) => { setTgl(e.target.value || todayStr()); setPage(1); }} /></div>
+        {!lintas && <div><label style={{ marginTop: 0 }}>Tanggal absensi</label><input type="date" value={tgl} onChange={(e) => { setTgl(e.target.value || todayStr()); setPage(1); }} /></div>}
         <div><label style={{ marginTop: 0 }}>Lokasi kerja</label><select value={cab} onChange={(e) => { setCab(+e.target.value); setUid(0); setPage(1); }}>
           <option value={0}>— Semua lokasi —</option>{cabang.map((c) => <option key={c.id} value={c.id}>{c.nama}</option>)}</select></div>
         {admin && <div><label style={{ marginTop: 0 }}>Karyawan</label><select value={uid} onChange={(e) => { setUid(+e.target.value); setPage(1); }}>
           <option value={0}>— Semua karyawan —</option>{users.filter((u) => u.role !== 'direktur' && (!cab || u.cabangId === cab)).map((u) => <option key={u.id} value={u.id}>{u.nama} ({u.nik})</option>)}</select></div>}
-        <div><label style={{ marginTop: 0 }}>Status approval</label><select value={filter.approval ?? ''} onChange={(e) => setFilter({ ...filter, approval: e.target.value || undefined })}>
-          <option value="">— Semua —</option><option value="menunggu">Menunggu</option><option value="disetujui">Disetujui</option><option value="ditolak">Ditolak</option></select></div>
+        {!lintas && <div><label style={{ marginTop: 0 }}>Status approval</label><select value={filter.approval ?? ''} onChange={(e) => setFilter({ ...filter, approval: e.target.value || undefined })}>
+          <option value="">— Semua —</option><option value="menunggu">Menunggu</option><option value="disetujui">Disetujui</option><option value="ditolak">Ditolak</option></select></div>}
       </div>
       <label>Cari nama, NIK, atau divisi</label><input value={cari} onChange={(e) => { setCari(e.target.value); setPage(1); }} placeholder="Ketik nama / NIK / divisi" />
       {(filter.kategori || filter.approval) && <div className="note" style={{ marginTop: 10 }}>Disaring: {filter.kategori === 'telat' && <b>hanya yang terlambat</b>}
@@ -105,6 +127,7 @@ export default function Absensi() {
         <button className="btn ghost sm auto" onClick={() => setFilter({})}><Ikon n="x" />Hapus saringan</button></div>}
       <div className="row ra-aksi" style={{ marginTop: 10, flexWrap: 'wrap' }}>
         <button className="btn sm green" disabled={!pilih.size} onClick={setujuiTerpilih}><Ikon n="check-check" />Setujui terpilih ({pilih.size})</button>
+        {!!data?.menunggu && <button className="btn sm green" onClick={setujuiSemua}><Ikon n="check-check" />Setujui semua yang menunggu ({data.menunggu})</button>}
         <button className="btn sm" onClick={eksporDetail}><Ikon n="download" />Export Excel (detail)</button>
         {admin && <button className="btn sm ghost" onClick={eksporRekap}><Ikon n="download" />Export Rekap Bulanan ({NAMA_BULAN[bl - 1]} {th})</button>}</div>
       {!data ? <div className="skel" style={{ height: 140, marginTop: 12 }} /> : l.length ? (<>
@@ -131,14 +154,14 @@ export default function Absensi() {
                   : a.inLuar || a.outLuar ? <span className="badge b-amber">Luar area</span> : <span className="badge b-green">Kantor</span>}</td>
               <td>{a.inPhoto ? <button className="btn sm auto ghost" onClick={() => lihatFoto(a, 'in')}>In</button> : '-'}{a.outPhoto && <> <button className="btn sm auto ghost" onClick={() => lihatFoto(a, 'out')}>Out</button></>}</td>
               <td><BadgeApproval a={a} />{a.approvalOleh && <div className="tiny muted" title={a.approvalCatatan}>{a.approvalOleh}</div>}
-                {a.approval !== 'disetujui' && bolehPutus(a) && <div className="row" style={{ gap: 4, marginTop: 4, flexWrap: 'nowrap' }}>
-                  <button className="btn sm auto green" title="Setujui" aria-label={'Setujui absensi ' + a.nama} onClick={() => putus(a, true)}><Ikon n="check" /></button>
+                {bolehPutus(a) && <div className="row" style={{ gap: 4, marginTop: 4, flexWrap: 'nowrap' }}>
+                  {a.approval !== 'disetujui' && <button className="btn sm auto green" title="Setujui" aria-label={'Setujui absensi ' + a.nama} onClick={() => putus(a, true)}><Ikon n="check" /></button>}
                   {a.approval !== 'ditolak' && <button className="btn sm auto red" title="Tolak" aria-label={'Tolak absensi ' + a.nama} onClick={() => putus(a, false)}><Ikon n="x" /></button>}</div>}</td>
               {admin && <td>{a.dikoreksi && <span className="badge b-amber" title={a.koreksiCatatan}>✎ {a.koreksiOleh}</span>} {a.lupaOut && <span className="badge b-red">Lupa out</span>}{' '}
                 <span className="row" style={{ gap: 4, flexWrap: 'nowrap', display: 'inline-flex' }}>
                   <button className="btn sm auto ghost" onClick={() => koreksi(a)}>Koreksi</button>
                   <button className="btn sm auto red" title="Hapus data absensi" aria-label={'Hapus absensi ' + a.nama} onClick={() => hapus(a)}><Ikon n="trash-2" /></button></span></td>}</tr>))}
-        </tbody></table></div><NavigasiHalaman page={data.page} total={data.total} totalPages={data.totalPages} ubah={setPage} /></>) : <div className="empty">Tidak ada data absensi pada {tgl ? tglPendek(tgl) : 'tanggal ini'}{(filter.kategori || filter.approval) && ' dengan saringan ini'}.</div>}
+        </tbody></table></div><NavigasiHalaman page={data.page} total={data.total} totalPages={data.totalPages} ubah={setPage} /></>) : <div className="empty">{lintas ? 'Tidak ada absensi yang menunggu persetujuan.' : <>Tidak ada data absensi pada {tgl ? tglPendek(tgl) : 'tanggal ini'}{(filter.kategori || filter.approval) && ' dengan saringan ini'}.</>}</div>}
       <div className="tiny muted" style={{ marginTop: 10 }}>Absensi yang <b>ditolak</b> dihitung tidak hadir di payroll. Absensi yang belum diputus tetap dihitung hadir. Anda tidak dapat menyetujui absensi sendiri.</div>
     </div>
   </>);
