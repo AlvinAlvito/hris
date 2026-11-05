@@ -1,7 +1,7 @@
 /* Pengajuan pegawai: cuti, izin/sakit/WFH/dinas/setengah hari, lembur, lupa clock in / out, izin terlambat.
    Diputus Supervisor (timnya), HC, atau Super Admin. */
 import { exec, nilai, q, q1 } from '@/lib/db';
-import { gagal, i, s } from '@/lib/http';
+import { gagal, i, s, teksPanjang } from '@/lib/http';
 import {
   cutiAktif, cutiPending, hitungHari, jadwalHari, jamTeks, KET_TETAP_KERJA, labelJenis, labelKet, logAksi, need,
   perluRekomendasi, sisaCuti, sudahAdaAbsensi,
@@ -24,7 +24,7 @@ export const aksiPengajuan: KumpulanAksi = {
   async cuti_ajukan(m) {
     const u = await need();
     if (u.role === 'direktur') gagal('Super Admin tidak memiliki jatah cuti');
-    const jenis = s(m, 'jenis'), mulai = s(m, 'mulai'), selesai = s(m, 'selesai'), alasan = s(m, 'alasan');
+    const jenis = s(m, 'jenis'), mulai = s(m, 'mulai'), selesai = s(m, 'selesai'), alasan = teksPanjang(m, 'alasan', 'Alasan');
     validasiLinkBukti(m);
     if (!['Cuti Tahunan', 'Sakit', 'Izin', 'Cuti Melahirkan', 'Cuti Penting'].includes(jenis)) gagal('Jenis cuti tidak sah');
     if (!POLA_TGL.test(mulai) || !POLA_TGL.test(selesai)) gagal('Tanggal tidak sah');
@@ -68,7 +68,7 @@ export const aksiPengajuan: KumpulanAksi = {
       sesiIzin = s(m, 'sesi');
       if (sesiIzin !== 'pagi' && sesiIzin !== 'siang') gagal('Pilih sesi pagi atau siang');
     }
-    const alasan = s(m, 'alasan');
+    const alasan = teksPanjang(m, 'alasan', 'Keterangan');
     // keterangan wajib untuk semua jenis kecuali libur
     if (alasan === '' && jenis !== 'libur')
       gagal(jenis === 'dlk' ? 'Tuliskan kota tujuan dan keperluan dinas'
@@ -128,7 +128,7 @@ export const aksiPengajuan: KumpulanAksi = {
     if (jenis !== 'lembur' && u.role === 'direktur') gagal('Super Admin tidak melakukan absensi');
     const tgl = s(m, 'tanggal');
     if (!POLA_TGL.test(tgl)) gagal('Tanggal tidak sah');
-    const alasan = s(m, 'alasan');
+    const alasan = teksPanjang(m, 'alasan', 'Alasan');
     if (alasan === '' && jenis !== 'lupa_out') gagal('Alasan wajib diisi');   // lupa clock out: alasan opsional
     const hariIni = tglWIB();
     if (tgl < tambahHari(hariIni, -7)) gagal('Pengajuan hanya bisa untuk 7 hari terakhir');

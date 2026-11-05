@@ -147,7 +147,7 @@ function KotakDialog({ d, tutup, toast }: { d: Dialog; tutup: (v: any) => void; 
           <>
             <label style={{ marginTop: 4 }}>{d.label}</label>
             {d.panjang
-              ? <textarea autoFocus value={v} onChange={(e) => setV(e.target.value)} />
+              ? <textarea autoFocus maxLength={1000} value={v} onChange={(e) => setV(e.target.value)} />
               : <input autoFocus value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); ok(); } }} />}
           </>
         )}

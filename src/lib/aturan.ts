@@ -76,7 +76,7 @@ export async function need(peran?: string[]): Promise<User> {
 export async function logAksi(uid: number, aksi: string, ket = ''): Promise<void> {
   const k = konteks();
   await exec('INSERT INTO log_aktivitas (user_id,aksi,keterangan,ip,ua) VALUES (?,?,?,?,?)',
-    [uid || null, aksi, ket, (k?.ip ?? '').slice(0, 45), (k?.ua ?? '').slice(0, 255)]);
+    [uid || null, aksi, ket.slice(0, 255), (k?.ip ?? '').slice(0, 45), (k?.ua ?? '').slice(0, 255)]);
 }
 
 /* ---------------- rekomendasi atasan (data lama; nonaktif secara bawaan) ---------------- */

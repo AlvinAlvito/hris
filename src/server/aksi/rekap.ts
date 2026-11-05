@@ -4,7 +4,7 @@
 import { unlink } from 'node:fs/promises';
 import { exec, q, q1 } from '@/lib/db';
 import { folderPenyimpanan, jalurAman } from '@/lib/berkas';
-import { b, gagal, i, s } from '@/lib/http';
+import { b, gagal, i, s, teksPanjang } from '@/lib/http';
 import { cakupanTim, labelKet, labelPenyetuju, logAksi, need, pastikanDalamCakupan, sqlCakupan, jamKerjaHari } from '@/lib/aturan';
 import { statusHarian } from '@/lib/statusHarian';
 import { POLA_TGL, tglWIB } from '@/lib/waktu';
@@ -17,7 +17,7 @@ const tglIdn = (t: string) => String(t).split('-').reverse().join('/');
 export const aksiRekap: KumpulanAksi = {
   async abs_putus(m) {
     const u = await need(['atasan']);
-    const id = i(m, 'id'), setuju = b(m, 'setuju'), catatan = s(m, 'catatan').slice(0, 255);
+    const id = i(m, 'id'), setuju = b(m, 'setuju'), catatan = teksPanjang(m, 'catatan', 'Catatan');
     const a = await q1('SELECT a.*, x.nama, x.nik FROM absensi a JOIN users x ON x.id=a.user_id WHERE a.id=?', [id]);
     if (!a) gagal('Data absensi tidak ditemukan');
     if (!a.in_time) gagal('Karyawan belum clock in pada tanggal itu');

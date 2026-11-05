@@ -25,9 +25,10 @@ import { aksiAsisten } from './aksi/asisten';
 import { aksiRekrutmen } from './aksi/rekrutmen';
 import { aksiKpi } from './aksi/kpi';
 import { aksiLogKerja } from './aksi/logKerja';
+import { aksiBackup } from './aksi/backup';
 
 export const AKSI: KumpulanAksi = {
   ...aksiAuth, ...aksiAbsen, ...aksiPengajuan, ...aksiInfo, ...aksiInbox, ...aksiBranding,
   ...aksiPersetujuan, ...aksiAdmin, ...aksiKaryawan, ...aksiDashboard, ...aksiLaporan, ...aksiPayroll, ...aksiOrganisasi, ...aksiRekap, ...aksiNotifikasi, ...aksiPengajuanAdmin, ...aksiAsisten,
-  ...aksiRekrutmen, ...aksiKpi, ...aksiLogKerja,
+  ...aksiRekrutmen, ...aksiKpi, ...aksiLogKerja, ...aksiBackup,
 };

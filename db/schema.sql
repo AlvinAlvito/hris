@@ -160,12 +160,12 @@ CREATE TABLE IF NOT EXISTS absensi (
   lupa_out    TINYINT(1) NOT NULL DEFAULT 0,      -- clock in tanpa clock out, sudah lewat batas wajar
   dikoreksi   TINYINT(1) NOT NULL DEFAULT 0,      -- pernah diperbaiki HR / Direktur
   koreksi_oleh VARCHAR(150) NOT NULL DEFAULT '',
-  koreksi_catatan VARCHAR(255) NOT NULL DEFAULT '',
+  koreksi_catatan VARCHAR(1000) NOT NULL DEFAULT '',
   tgl_koreksi DATETIME NULL,
   -- persetujuan absensi oleh Supervisor (timnya) / HC / Super Admin; ditolak = dihitung tidak hadir
   approval    ENUM('menunggu','disetujui','ditolak') NOT NULL DEFAULT 'menunggu',
   approval_oleh VARCHAR(150) NOT NULL DEFAULT '',
-  approval_catatan VARCHAR(255) NOT NULL DEFAULT '',
+  approval_catatan VARCHAR(1000) NOT NULL DEFAULT '',
   tgl_approval DATETIME NULL,
   ip          VARCHAR(45)  NOT NULL DEFAULT '',
   ua          VARCHAR(255) NOT NULL DEFAULT '',
@@ -201,16 +201,16 @@ CREATE TABLE IF NOT EXISTS pengajuan (
   jam_mulai     TIME NULL,               -- lembur; jam sebenarnya untuk lupa clock in / out; perkiraan tiba untuk izin terlambat
   jam_selesai   TIME NULL,
   menit         INT NOT NULL DEFAULT 0,  -- durasi lembur yang diajukan
-  alasan        VARCHAR(255) NOT NULL DEFAULT '',
+  alasan        VARCHAR(1000) NOT NULL DEFAULT '',
   bukti_link    VARCHAR(1000) NOT NULL DEFAULT '',
   dibuat_oleh   VARCHAR(150) NOT NULL DEFAULT '',  -- diisi bila dibuat HC / Super Admin atas nama karyawan
   status        ENUM('Menunggu Rekomendasi','Menunggu HR','Disetujui','Ditolak Kepala Toko','Ditolak HR','Dibatalkan')
                 NOT NULL DEFAULT 'Menunggu HR',
   rekomendasi   ENUM('','Direkomendasikan','Tidak Direkomendasikan') NOT NULL DEFAULT '',
   perekomendasi VARCHAR(150) NOT NULL DEFAULT '',
-  catatan_rekomendasi VARCHAR(255) NOT NULL DEFAULT '',
+  catatan_rekomendasi VARCHAR(1000) NOT NULL DEFAULT '',
   approver      VARCHAR(150) NOT NULL DEFAULT '',
-  catatan_hr    VARCHAR(255) NOT NULL DEFAULT '',
+  catatan_hr    VARCHAR(1000) NOT NULL DEFAULT '',
   jadwal_sebelum VARCHAR(80) NOT NULL DEFAULT '',
   jadwal_sesudah VARCHAR(80) NOT NULL DEFAULT '',
   tgl_rekomendasi DATETIME NULL,
@@ -280,16 +280,16 @@ CREATE TABLE IF NOT EXISTS ketidakhadiran (
   tanggal       DATE NOT NULL,
   jenis         ENUM('sakit','izin','keperluan','libur','lainnya','setengah_hari','wfh','dlk') NOT NULL DEFAULT 'izin',
   sesi          ENUM('','pagi','siang') NOT NULL DEFAULT '',    -- khusus izin setengah hari
-  alasan        VARCHAR(255) NOT NULL DEFAULT '',
+  alasan        VARCHAR(1000) NOT NULL DEFAULT '',
   bukti_link    VARCHAR(1000) NOT NULL DEFAULT '',
   dibuat_oleh   VARCHAR(150) NOT NULL DEFAULT '',  -- diisi bila dibuat HC / Super Admin atas nama karyawan
   status        ENUM('Menunggu Rekomendasi','Menunggu HR','Disetujui','Ditolak Kepala Toko','Ditolak HR','Dibatalkan')
                 NOT NULL DEFAULT 'Menunggu HR',
   rekomendasi   ENUM('','Direkomendasikan','Tidak Direkomendasikan') NOT NULL DEFAULT '',
   perekomendasi VARCHAR(150) NOT NULL DEFAULT '',
-  catatan_rekomendasi VARCHAR(255) NOT NULL DEFAULT '',
+  catatan_rekomendasi VARCHAR(1000) NOT NULL DEFAULT '',
   approver      VARCHAR(150) NOT NULL DEFAULT '',
-  catatan_hr    VARCHAR(255) NOT NULL DEFAULT '',
+  catatan_hr    VARCHAR(1000) NOT NULL DEFAULT '',
   tgl_rekomendasi DATETIME NULL,
   tgl_putusan     DATETIME NULL,
   created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

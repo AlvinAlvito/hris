@@ -10,8 +10,15 @@ export function gagal(pesan: string, kode = 400): never {
 
 /* Pembaca isian permintaan, setara s()/f()/i() di versi lama */
 export type Masukan = Record<string, any>;
+export const MAKS_TEKS = 1000;
 export function s(m: Masukan, k: string, bawaan = ''): string {
   return m[k] !== undefined && m[k] !== null ? String(m[k]).trim() : bawaan;
+}
+/* alasan & catatan yang diketik pengguna: batas sama dengan kolomnya, dengan pesan yang bisa ditindaklanjuti */
+export function teksPanjang(m: Masukan, k: string, nama: string, bawaan = ''): string {
+  const t = s(m, k, bawaan);
+  if (t.length > MAKS_TEKS) gagal(`${nama} terlalu panjang (${t.length.toLocaleString('id-ID')} karakter, maksimal ${MAKS_TEKS.toLocaleString('id-ID')}). Persingkat lalu kirim lagi.`);
+  return t;
 }
 export function f(m: Masukan, k: string, bawaan: number | null = null): number | null {
   const v = m[k];

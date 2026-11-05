@@ -2,7 +2,7 @@
    atau penyelenggaraan kompetisi akhir pekan. Bisa untuk banyak karyawan & rentang tanggal sekaligus, langsung
    disetujui atau menunggu persetujuan biasa. Juga ubah & hapus pengajuan yang sudah ada. */
 import { exec, q, q1, transaksi } from '@/lib/db';
-import { b, gagal, i, s } from '@/lib/http';
+import { b, gagal, i, s, teksPanjang } from '@/lib/http';
 import {
   cutiAktif, hitungHari, jadwalHari, labelJenis, labelKet, labelPenyetuju, logAksi, need, sisaCuti, terapkanSetengahHari,
 } from '@/lib/aturan';
@@ -21,7 +21,7 @@ export const aksiPengajuanAdmin: KumpulanAksi = {
   /* buat pengajuan untuk satu / banyak karyawan */
   async adm_buat_pengajuan(m) {
     const u = await need(['admin']);
-    const jenis = s(m, 'jenis'), mulai = s(m, 'mulai'), sampaiMasukan = s(m, 'sampai') || mulai, alasan = s(m, 'alasan').slice(0, 255);
+    const jenis = s(m, 'jenis'), mulai = s(m, 'mulai'), sampaiMasukan = s(m, 'sampai') || mulai, alasan = teksPanjang(m, 'alasan', 'Keterangan');
     const setuju = 'setujui' in m ? b(m, 'setujui') : true, termasukLibur = 'termasukLibur' in m ? b(m, 'termasukLibur') : jenis === 'dlk';
     const ids = [...new Set((Array.isArray(m.userIds) ? m.userIds : []).map(Number).filter((x: number) => Number.isInteger(x) && x > 0))].slice(0, 300) as number[];
     if (!ids.length) gagal('Pilih minimal satu karyawan');
@@ -104,7 +104,7 @@ export const aksiPengajuanAdmin: KumpulanAksi = {
       gagal('Karyawan ini sudah punya pengajuan pada tanggal tersebut');
     const putusBaru = status !== x.status && ['Disetujui', 'Ditolak HR'].includes(status);
     await exec(`UPDATE ketidakhadiran SET jenis=?, tanggal=?, sesi=?, alasan=?, status=?, catatan_hr=?${putusBaru ? ', approver=?, tgl_putusan=NOW()' : ''} WHERE id=?`,
-      [jenis, tanggal, sesi, s(m, 'alasan', x.alasan).slice(0, 255), status, s(m, 'catatan', x.catatan_hr ?? '').slice(0, 255), ...(putusBaru ? [labelPenyetuju(u)] : []), x.id]);
+      [jenis, tanggal, sesi, teksPanjang(m, 'alasan', 'Keterangan', x.alasan), status, teksPanjang(m, 'catatan', 'Catatan', x.catatan_hr ?? ''), ...(putusBaru ? [labelPenyetuju(u)] : []), x.id]);
     if (status === 'Disetujui' && jenis === 'setengah_hari') await terapkanSetengahHari(x.user_id, tanggal, sesi);
     await logAksi(u.id, 'ubah_ketidakhadiran', `#${x.id} ${labelKet(jenis)} ${tanggal} ${status}`);
     if (status !== x.status || jenis !== x.jenis || tanggal !== x.tanggal)

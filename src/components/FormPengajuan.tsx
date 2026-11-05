@@ -63,7 +63,7 @@ export function FormIzin({ jenis, selesai }: { jenis: 'izin' | 'setengah_hari' |
         </>
       )}
       <label>{jenis === 'dlk' ? 'Kota tujuan & keperluan' : jenis === 'wfh' ? 'Tugas / laporan pekerjaan' : 'Keterangan'} <span className="tiny" style={{ color: 'var(--danger)' }}>(wajib)</span></label>
-      <textarea value={alasan} onChange={(e) => setAlasan(e.target.value)}
+      <textarea maxLength={1000} value={alasan} onChange={(e) => setAlasan(e.target.value)}
         placeholder={jenis === 'dlk' ? 'mis. Medan — persiapan OSN tingkat provinsi' : jenis === 'wfh' ? 'mis. menyusun laporan OSN, rapat daring dengan tim Sales' : setengah ? 'mis. mengurus dokumen di kantor kelurahan' : 'mis. demam, kontrol ke dokter'} />
       <InputBuktiPengajuan link={buktiLink} setLink={setBuktiLink} file={buktiFile} setFile={setBuktiFile} />
       <button className="btn" disabled={kirim} onClick={ajukan}><Ikon n="send" />Kirim ke Atasan</button>
@@ -130,7 +130,7 @@ export function FormCuti({ selesai }: { selesai: Selesai }) {
           : <><br />Tidak memotong saldo cuti tahunan.</>}
       </div>
       <label>Alasan / keterangan <span className="tiny muted">(opsional)</span></label>
-      <textarea value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="Boleh dikosongkan" />
+      <textarea maxLength={1000} value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="Boleh dikosongkan" />
       <InputBuktiPengajuan link={buktiLink} setLink={setBuktiLink} file={buktiFile} setFile={setBuktiFile} />
       <div className="row">
         <button className="btn ghost sm" onClick={tutupSheet}>Batal</button>
@@ -165,7 +165,7 @@ export function FormLembur({ selesai }: { selesai: Selesai }) {
         <div><label>Jam selesai</label><input type="time" value={b} onChange={(e) => setB(e.target.value)} /></div>
       </div>
       <label>Alasan</label>
-      <textarea value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="mis. input nilai OSN" />
+      <textarea maxLength={1000} value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="mis. input nilai OSN" />
       <InputBuktiPengajuan link={buktiLink} setLink={setBuktiLink} file={buktiFile} setFile={setBuktiFile} />
       <button className="btn" disabled={kirim} onClick={ajukan}><Ikon n="send" />Kirim ke Atasan</button>
       <button className="btn ghost" onClick={tutupSheet}>Batal</button>
@@ -205,7 +205,7 @@ export function FormKoreksiAbsen({ jenis, selesai }: { jenis: 'lupa_in' | 'lupa_
       </div>
       <div className="tiny muted" style={{ marginTop: 6 }}>{k.ket}</div>
       <label>Alasan {wajib ? <span className="tiny" style={{ color: 'var(--danger)' }}>(wajib)</span> : <span className="tiny muted">(opsional)</span>}</label>
-      <textarea value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder={wajib ? k.contoh : 'Boleh dikosongkan'} />
+      <textarea maxLength={1000} value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder={wajib ? k.contoh : 'Boleh dikosongkan'} />
       <InputBuktiPengajuan link={buktiLink} setLink={setBuktiLink} file={buktiFile} setFile={setBuktiFile} />
       <button className="btn" disabled={kirim} onClick={ajukan}><Ikon n="send" />Kirim ke Atasan</button>
       <button className="btn ghost" onClick={tutupSheet}>Batal</button>

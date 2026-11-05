@@ -4,7 +4,8 @@
    1. menjalankan db/schema.sql -> membuat tabel yang belum ada, mengisi
       pengaturan/data bawaan yang belum ada (INSERT IGNORE);
    2. menambahkan KOLOM yang ada di schema.sql tetapi belum ada di database;
-   3. melebarkan pilihan ENUM bila versi baru menambah pilihan.
+   3. melebarkan pilihan ENUM bila versi baru menambah pilihan;
+   4. melebarkan VARCHAR bila skema menetapkan batas lebih panjang (tidak pernah memendekkan).
    Aman dijalankan berulang. TIDAK PERNAH menghapus tabel, kolom, atau data.
    ===================================================================== */
 import { readFileSync } from 'node:fs';
@@ -61,6 +62,12 @@ for (const [, tabel, isi] of sql.matchAll(/CREATE TABLE IF NOT EXISTS\s+`?(\w+)`
     if (!(k in ada)) {
       await db.query(`ALTER TABLE \`${tabel}\` ADD COLUMN \`${kolom}\` ${def.replace(/\bPRIMARY KEY\b|\bAUTO_INCREMENT\b/gi, '')}${sebelum ? ` AFTER \`${sebelum}\`` : ''}`);
       console.log(`${tabel}.${kolom} ditambahkan`); n++;
+    } else if (/^VARCHAR\(\d+\)/i.test(def)) {
+      const baru = Number(/^VARCHAR\((\d+)\)/i.exec(def)[1]), lama = /^varchar\((\d+)\)/i.exec(ada[k]);
+      if (lama && baru > Number(lama[1])) {
+        await db.query(`ALTER TABLE \`${tabel}\` MODIFY COLUMN \`${kolom}\` ${def}`);
+        console.log(`${tabel}.${kolom}: dilebarkan ke ${baru} karakter`); n++;
+      }
     } else if (/^ENUM\s*\(/i.test(def)) {
       // lebarkan ENUM hanya bila semua pilihan lama masih ada
       const baru = isiEnum((/^(ENUM\s*\((?:[^()']|'[^']*')*\))/i.exec(def) ?? [])[1] ?? ''), lama = isiEnum(ada[k]);

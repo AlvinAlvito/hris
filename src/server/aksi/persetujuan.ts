@@ -2,7 +2,7 @@
    HC & Super Admin memutus seluruh karyawan; Supervisor hanya tim di bawahnya.
    Tidak ada yang bisa memutus pengajuannya sendiri. */
 import { exec, nilai, q, q1, transaksi } from '@/lib/db';
-import { b, gagal, i, s } from '@/lib/http';
+import { b, gagal, i, s, teksPanjang } from '@/lib/http';
 import {
   cakupanTim, cutiAktif, labelJenis, labelKet, labelPenyetuju, logAksi, need, pastikanDalamCakupan, sisaCuti, sqlCakupan,
   terapkanSetengahHari,
@@ -39,7 +39,7 @@ export const aksiPersetujuan: KumpulanAksi = {
   },
   async adm_cuti_putus(m) {
     const u = await need(PENYETUJU);
-    const id = i(m, 'id'), st = s(m, 'status'), cat = s(m, 'catatan');
+    const id = i(m, 'id'), st = s(m, 'status'), cat = teksPanjang(m, 'catatan', 'Catatan');
     if (st !== 'Disetujui' && st !== 'Ditolak') gagal('Status tidak sah');
     const c = await q1('SELECT c.*, u.role urole FROM cuti c JOIN users u ON u.id=c.user_id WHERE c.id=?', [id]);
     if (!c) gagal('Pengajuan tidak ditemukan');
@@ -75,7 +75,7 @@ export const aksiPersetujuan: KumpulanAksi = {
   },
   async adm_pengajuan_putus(m) {
     const u = await need(PENYETUJU);
-    const id = i(m, 'id'), setuju = b(m, 'setuju'), catatan = s(m, 'catatan');
+    const id = i(m, 'id'), setuju = b(m, 'setuju'), catatan = teksPanjang(m, 'catatan', 'Catatan');
     const x = await q1('SELECT * FROM pengajuan WHERE id=?', [id]);
     if (!x) gagal('Pengajuan tidak ditemukan');
     await pastikanDalamCakupan(u, x.user_id);
@@ -104,7 +104,7 @@ export const aksiPersetujuan: KumpulanAksi = {
           const h = await hitungAbsensi(a, kar, jam, jamOut, a.tgl_pulang ?? '');
           await exec(`UPDATE absensi SET in_time=?, menit_kerja=?, kurang_menit=?, lembur_menit=?, langgar_inti=?, terlambat=?, menit_telat=?,
             dikoreksi=1, koreksi_oleh=?, koreksi_catatan=?, tgl_koreksi=NOW() WHERE id=?`,
-          [h.in_time, h.menit_kerja, h.kurang_menit, h.lembur_menit, h.langgar_inti, h.terlambat, h.menit_telat, oleh, ket.slice(0, 255), a.id]);
+          [h.in_time, h.menit_kerja, h.kurang_menit, h.lembur_menit, h.langgar_inti, h.terlambat, h.menit_telat, oleh, ket.slice(0, 1000), a.id]);
         }
         pesan = `Disetujui — jam masuk ${jam} tercatat`;
       } else if (x.jenis === 'lupa_out') {
@@ -112,7 +112,7 @@ export const aksiPersetujuan: KumpulanAksi = {
         const h = await hitungAbsensi(a, kar, String(a.in_time).slice(0, 5), jam);
         await exec(`UPDATE absensi SET out_time=?, tgl_pulang=?, menit_kerja=?, kurang_menit=?, lembur_menit=?, langgar_inti=?, lupa_out=0,
           dikoreksi=1, koreksi_oleh=?, koreksi_catatan=?, tgl_koreksi=NOW() WHERE id=?`,
-        [h.out_time, h.tgl_pulang, h.menit_kerja, h.kurang_menit, h.lembur_menit, h.langgar_inti, oleh, ket.slice(0, 255), a.id]);
+        [h.out_time, h.tgl_pulang, h.menit_kerja, h.kurang_menit, h.lembur_menit, h.langgar_inti, oleh, ket.slice(0, 1000), a.id]);
         pesan = `Disetujui — jam pulang ${jam} tercatat`;
       } else if (x.jenis === 'izin_telat') {
         // berlaku untuk baris yang sudah ada; bila belum absen, clock in nanti membaca izin ini
@@ -144,7 +144,7 @@ export const aksiPersetujuan: KumpulanAksi = {
   },
   async adm_ket_putus(m) {
     const u = await need(PENYETUJU);
-    const id = i(m, 'id'), setuju = b(m, 'setuju'), catatan = s(m, 'catatan');
+    const id = i(m, 'id'), setuju = b(m, 'setuju'), catatan = teksPanjang(m, 'catatan', 'Catatan');
     const x = await q1('SELECT * FROM ketidakhadiran WHERE id=?', [id]);
     if (!x) gagal('Keterangan tidak ditemukan');
     await pastikanDalamCakupan(u, x.user_id);

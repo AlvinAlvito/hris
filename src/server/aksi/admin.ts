@@ -1,7 +1,7 @@
 /* Kelola: dashboard harian, lokasi kerja, karyawan, absensi & koreksi, rekap bulanan, pengaturan, log */
 import bcrypt from 'bcryptjs';
 import { exec, nilai, q, q1, sisipkan, type Baris } from '@/lib/db';
-import { b, f, gagal, i, s } from '@/lib/http';
+import { b, f, gagal, i, s, teksPanjang } from '@/lib/http';
 import {
   batasJamTerbuka, cabangPublik, cakupanTim, cutiAktif, jadwalHari, jamKerjaHari, jamTeks, labelKet, logAksi, need, sisaCuti, sqlCakupan,
 } from '@/lib/aturan';
@@ -265,7 +265,7 @@ export const aksiAdmin: KumpulanAksi = {
     const id = i(m, 'id');
     const a = await q1(`SELECT a.*, u.nama, u.nik, u.jam_mode ujm, u.inti_mulai, u.inti_selesai FROM absensi a JOIN users u ON u.id=a.user_id WHERE a.id=?`, [id]);
     if (!a) gagal('Data absensi tidak ditemukan');
-    const catatan = s(m, 'catatan');
+    const catatan = teksPanjang(m, 'catatan', 'Catatan koreksi');
     if (!catatan) gagal('Catatan koreksi wajib diisi — ini yang dilihat auditor nanti');
     const jamIn = s(m, 'jamMasuk'), jamOut = s(m, 'jamPulang');
     if (!POLA_JAM.test(jamIn)) gagal('Jam masuk tidak sah');

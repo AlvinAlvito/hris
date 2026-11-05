@@ -35,6 +35,7 @@ export const NAV: ItemNav[] = [
   { k: 'orgk', href: '/organisasi', t: 'Struktur Organisasi', ic: 'network', g: 'Informasi', s: (m) => !adm(m), siap: true },
   { k: 'info', href: '/informasi', t: 'Pengumuman & Libur', ic: 'megaphone', g: 'Informasi', s: () => true, siap: true },
   { k: 'set', href: '/pengaturan', t: 'Pengaturan', ic: 'settings', g: 'Sistem', s: adm, siap: true },
+  { k: 'backup', href: '/backup', t: 'Backup Spreadsheet', ic: 'shield-check', g: 'Sistem', s: adm, siap: true },
   { k: 'profil', href: '/profil', t: 'Profil Saya', ic: 'user', g: 'Akun', s: () => true, siap: true },
 ];
 

@@ -19,6 +19,8 @@ async function tangani(req: Request, aksi: string, masukan: Record<string, any>)
   } catch (e) {
     if (e instanceof Gagal) return NextResponse.json({ ok: false, error: e.message }, { status: e.kode });
     console.error('HRIS [' + aksi + ']', e);
+    // jaring pengaman untuk kolom lain yang lebih pendek dari isian pengguna
+    if (typeof e === 'object' && e && 'code' in e && e.code === 'ER_DATA_TOO_LONG') return NextResponse.json({ ok: false, error: 'Isian terlalu panjang. Persingkat lalu kirim lagi.' }, { status: 400 });
     const db = typeof e === 'object' && e && 'sqlMessage' in e;
     return NextResponse.json({ ok: false, error: db ? 'Kesalahan database. Hubungi admin sistem.' : 'Terjadi kesalahan di server' }, { status: 500 });
   }

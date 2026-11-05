@@ -9,5 +9,9 @@ export async function register() {
     // analisis CV pelamar di latar belakang (antrean, tahan batas kuota AI)
     const { mulaiPekerjaRekrutmen } = await import('./lib/rekrutmen');
     mulaiPekerjaRekrutmen();
+    // backup ke Google Spreadsheet, hanya bila SHEET_BACKUP_URL & SHEET_BACKUP_TOKEN diisi (lokal tidak ikut mengirim)
+    const { mulaiBackupTerjadwal } = await import('./lib/backupSheet');
+    const { jalankanDalamKonteks } = await import('./lib/konteks');
+    mulaiBackupTerjadwal((f) => jalankanDalamKonteks({ ip: '', ua: '' }, f));
   }
 }

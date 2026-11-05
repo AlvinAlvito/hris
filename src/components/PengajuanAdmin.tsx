@@ -99,7 +99,7 @@ export function FormPengajuanKaryawan({ selesai, jenisAwal = 'dlk' }: { selesai:
     {jenis === 'izin_telat' && <><label>Perkiraan jam tiba</label><input type="time" value={jam} onChange={(e) => setJam(e.target.value)} /></>}
 
     <label>{jenis === 'dlk' ? 'Tujuan & keperluan (wajib)' : 'Keterangan'}</label>
-    <textarea value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder={jenis === 'dlk' ? 'mis. Panitia OSN Provinsi — Medan' : 'mis. dikonfirmasi atasan via telepon'} />
+    <textarea maxLength={1000} value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder={jenis === 'dlk' ? 'mis. Panitia OSN Provinsi — Medan' : 'mis. dikonfirmasi atasan via telepon'} />
 
     <label>Karyawan <span className="tiny muted">({pilih.size} dipilih)</span></label>
     <input value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari nama, NIK, divisi…" />
@@ -139,7 +139,7 @@ export function FormUbahKet({ x, selesai }: { x: Data; selesai: () => void }) {
     {v.jenis === 'setengah_hari' && <><label>Sesi</label><select value={v.sesi} onChange={set('sesi')}><option value="pagi">Pagi</option><option value="siang">Siang</option></select></>}
     <label>Status</label><select value={v.status} onChange={set('status')}>
       {['Menunggu HR', 'Disetujui', 'Ditolak HR', 'Dibatalkan'].map((st) => <option key={st} value={st}>{st.replace(' HR', '')}</option>)}</select>
-    <label>Keterangan</label><textarea value={v.alasan} onChange={set('alasan')} />
+    <label>Keterangan</label><textarea maxLength={1000} value={v.alasan} onChange={set('alasan')} />
     <label>Catatan HC</label><input value={v.catatan} onChange={set('catatan')} />
     <button className="btn" onClick={simpan}><Ikon n="check" />Simpan</button>
     <button className="btn ghost" onClick={tutupSheet}>Batal</button>
@@ -158,7 +158,7 @@ export function FormUbahCuti({ c, selesai }: { c: Data; selesai: () => void }) {
     <div className="row"><div><label>Mulai</label><input type="date" value={v.mulai} onChange={set('mulai')} /></div>
       <div><label>Selesai</label><input type="date" value={v.selesai} min={v.mulai} onChange={set('selesai')} /></div></div>
     <label>Status</label><select value={v.status} onChange={set('status')}>{['Menunggu', 'Disetujui', 'Ditolak', 'Dibatalkan'].map((st) => <option key={st}>{st}</option>)}</select>
-    <label>Alasan</label><textarea value={v.alasan} onChange={set('alasan')} />
+    <label>Alasan</label><textarea maxLength={1000} value={v.alasan} onChange={set('alasan')} />
     <label>Catatan</label><input value={v.catatan} onChange={set('catatan')} />
     <div className="tiny muted" style={{ marginTop: 6 }}>Jumlah hari dihitung ulang otomatis (hari libur tidak dihitung, kecuali cuti melahirkan). Saat ini: {tglPendek(c.mulai)} – {tglPendek(c.selesai)}, {c.hari} hari.</div>
     <button className="btn" onClick={simpan}><Ikon n="check" />Simpan</button>
