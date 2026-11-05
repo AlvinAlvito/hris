@@ -131,7 +131,8 @@ export const aksiPengajuan: KumpulanAksi = {
     const alasan = teksPanjang(m, 'alasan', 'Alasan');
     if (alasan === '' && jenis !== 'lupa_out') gagal('Alasan wajib diisi');   // lupa clock out: alasan opsional
     const hariIni = tglWIB();
-    if (tgl < tambahHari(hariIni, -7)) gagal('Pengajuan hanya bisa untuk 7 hari terakhir');
+    if (jenis === 'lembur') { if (tgl < tambahHari(hariIni, -90)) gagal('Pengajuan lembur paling lambat 90 hari setelah tanggal lembur'); }
+    else if (tgl < tambahHari(hariIni, -7)) gagal('Pengajuan hanya bisa untuk 7 hari terakhir');
 
     let jamA: string | null = null, jamB: string | null = null, menit = 0, sebelum = '', sesudah = '';
     if (jenis === 'lembur') {
@@ -167,7 +168,7 @@ export const aksiPengajuan: KumpulanAksi = {
     if (ada) gagal('Sudah ada pengajuan sejenis yang masih berjalan untuk tanggal itu');
     const status = (await perluRekomendasi(u)) ? 'Menunggu Rekomendasi' : 'Menunggu HR';
     const ins = await exec(`INSERT INTO pengajuan (user_id,jenis,tanggal,jam_mulai,jam_selesai,menit,alasan,status,jadwal_sebelum,jadwal_sesudah)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`, [u.id, jenis, tgl, jamA, jamB, menit, alasan.slice(0, 255), status, sebelum, sesudah]);
+      VALUES (?,?,?,?,?,?,?,?,?,?)`, [u.id, jenis, tgl, jamA, jamB, menit, alasan, status, sebelum, sesudah]);
     const buktiLink = await simpanBuktiPengajuan(m, u, 'pengajuan', ins.insertId);
     if (buktiLink) await exec('UPDATE pengajuan SET bukti_link=? WHERE id=?', [buktiLink, ins.insertId]);
     await logAksi(u.id, 'ajukan_' + jenis, tgl);

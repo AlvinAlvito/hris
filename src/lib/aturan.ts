@@ -166,7 +166,20 @@ export async function cutiPending(uid: number, th?: number): Promise<number> {
   return Number(await nilai(`SELECT COALESCE(SUM(hari),0) FROM cuti
     WHERE user_id=? AND jenis='Cuti Tahunan' AND status='Menunggu' AND YEAR(mulai)=?`, [uid, th ?? Number(tglWIB().slice(0, 4))]));
 }
-export async function sisaCuti(u: User): Promise<number> { return jatahCuti(u) - (await cutiTerpakai(u.id)); }
+/* cuti tahunan yang terpakai di luar HRIS (mis. sebelum aplikasi dipakai), diatur HC per tahun; tahun berikutnya kembali ke jatah penuh */
+export async function cutiPenyesuaian(uid: number, th?: number): Promise<number> {
+  return Number((await nilai('SELECT hari FROM cuti_penyesuaian WHERE user_id=? AND tahun=?', [uid, th ?? Number(tglWIB().slice(0, 4))])) ?? 0);
+}
+export async function sisaCuti(u: User, th?: number): Promise<number> {
+  return jatahCuti(u) - (await cutiTerpakai(u.id, th)) - (await cutiPenyesuaian(u.id, th));
+}
+/* HC menetapkan sisa cuti tahun berjalan; cuti yang disetujui sesudahnya tetap mengurangi sisa ini */
+export async function aturSisaCuti(u: User, sisa: number, oleh: string): Promise<void> {
+  const th = Number(tglWIB().slice(0, 4));
+  await exec(`INSERT INTO cuti_penyesuaian (user_id,tahun,hari,diubah_oleh,diubah_pada) VALUES (?,?,?,?,NOW())
+    ON DUPLICATE KEY UPDATE hari=VALUES(hari), diubah_oleh=VALUES(diubah_oleh), diubah_pada=NOW()`,
+  [u.id, th, jatahCuti(u) - (await cutiTerpakai(u.id, th)) - sisa, oleh]);
+}
 
 /* ---------------- kalender libur ---------------- */
 export async function kalenderLibur(): Promise<Record<string, Baris>> {

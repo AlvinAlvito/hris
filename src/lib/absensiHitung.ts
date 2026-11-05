@@ -72,6 +72,6 @@ export async function barisAbsensiManual(u: User, tgl: string, jamIn: string, ol
   await exec(`INSERT INTO absensi (user_id,tanggal,mode,in_time,cabang_id,cabang_nama,jam_mode,shift_id,shift_nama,jadwal_in,jadwal_out,
     target_menit,terlambat,menit_telat,dikoreksi,koreksi_oleh,koreksi_catatan,tgl_koreksi) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,NOW())`,
   [u.id, tgl, u.lokasi_mode ?? 'kantor', h.in_time, cab?.id ?? null, cab?.nama ?? '', j.jm, j.sh?.id ?? null, j.nama, j.jadwalIn, j.jadwalOut,
-    j.target, h.terlambat, h.menit_telat, oleh, catatan.slice(0, 255)]);
+    j.target, h.terlambat, h.menit_telat, oleh, catatan.slice(0, 1000)]);
   return (await q1('SELECT * FROM absensi WHERE user_id=? AND tanggal=?', [u.id, tgl]))!;
 }

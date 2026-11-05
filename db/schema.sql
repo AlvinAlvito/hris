@@ -474,6 +474,16 @@ CREATE TABLE IF NOT EXISTS pajak_saldo_awal (
   CONSTRAINT fk_psa_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS cuti_penyesuaian (
+  user_id     INT NOT NULL,
+  tahun       INT NOT NULL,
+  hari        INT NOT NULL DEFAULT 0,                -- cuti tahunan terpakai di luar HRIS, negatif berarti sisa melebihi jatah
+  diubah_oleh VARCHAR(150) NOT NULL DEFAULT '',
+  diubah_pada DATETIME NULL,
+  PRIMARY KEY (user_id, tahun),
+  CONSTRAINT fk_cp_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS payroll_periode (
   id          INT AUTO_INCREMENT PRIMARY KEY,
   periode     CHAR(7) NOT NULL,                     -- YYYY-MM

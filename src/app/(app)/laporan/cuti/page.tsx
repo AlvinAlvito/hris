@@ -23,6 +23,7 @@ export default function LaporanCuti() {
       <div className="stat"><div className="k">Jatah</div><div className="v">{u.berhak ? u.jatah : '—'}</div></div>
       <div className="stat"><div className="k">Terpakai</div><div className="v">{u.terpakai}</div></div>
       <div className="stat"><div className="k">Sisa</div><div className="v" style={{ color: 'var(--success)' }}>{u.berhak ? u.sisa : '—'}</div></div></div>
+    {!!u.penyesuaian && <div className="note" style={{ marginTop: 12 }}>Sisa cuti diatur HC: {u.penyesuaian > 0 ? `${u.penyesuaian} hari terpakai di luar HRIS` : `tambahan ${-u.penyesuaian} hari di atas jatah`}.</div>}
     <div className="judul-seksi" style={{ marginTop: 18 }}>Cuti yang diambil</div>
     {u.cuti.length ? u.cuti.map((c: Data, i: number) => (
       <div key={i} className="item"><div className="top"><div><div className="nm">{c.jenis}</div><div className="dt">{rentangTgl(c.mulai, c.selesai)}</div></div>
@@ -33,7 +34,7 @@ export default function LaporanCuti() {
   const ekspor = async () => {
     try { const semua = await api<Data[]>('lap_cuti', { tahun, search: cari, all: true }); return await keExcelBanyak([
     ['Ringkasan', semua.map((u) => ({ NIK: u.nik, Nama: u.nama, Divisi: u.divisi, Jabatan: u.jabatan, 'Jatah Cuti': u.berhak ? u.jatah : 'belum berhak',
-      Terpakai: u.terpakai, Menunggu: u.menunggu, Sisa: u.berhak ? u.sisa : '', 'Sakit (hari)': u.sakit, 'Izin (hari)': u.izin, 'Izin ½ Hari': u.setengahHari,
+      Terpakai: u.terpakai, 'Penyesuaian HC (hari terpakai di luar HRIS)': u.penyesuaian, Menunggu: u.menunggu, Sisa: u.berhak ? u.sisa : '', 'Sakit (hari)': u.sakit, 'Izin (hari)': u.izin, 'Izin ½ Hari': u.setengahHari,
       'WFH (hari)': u.wfh, 'Dinas Luar Kota (hari)': u.dlk }))],
     ['Rincian Tanggal', semua.flatMap((u) => u.cuti.map((c: Data) => ({ NIK: u.nik, Nama: u.nama, Divisi: u.divisi, Jenis: c.jenis, Mulai: c.mulai,
       Selesai: c.selesai, 'Jumlah Hari': c.hari, Alasan: c.alasan })))],

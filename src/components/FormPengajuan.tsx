@@ -160,6 +160,7 @@ export function FormLembur({ selesai }: { selesai: Selesai }) {
     <>
       <h3>Ajukan Lembur</h3>
       <label>Tanggal lembur</label><input type="date" value={tgl} onChange={(e) => setTgl(e.target.value)} />
+      <div className="tiny muted" style={{ marginTop: 4 }}>Bisa diajukan sampai 90 hari setelah tanggal lembur.</div>
       <div className="row">
         <div><label>Jam mulai</label><input type="time" value={a} onChange={(e) => setA(e.target.value)} /></div>
         <div><label>Jam selesai</label><input type="time" value={b} onChange={(e) => setB(e.target.value)} /></div>

@@ -11,6 +11,7 @@ import { barisAbsensiManual, hitungAbsensi } from '@/lib/absensiHitung';
 import { cutiRow, ketRow, pengajuanRow } from '@/lib/format';
 import type { KumpulanAksi } from '../daftar';
 import { beriTahu } from '@/lib/notifikasi';
+import { periodeTerkunci } from '@/lib/periode';
 import { hasilHalaman, paramHalaman, polaCari } from '@/lib/paginasi';
 
 const PENYETUJU = ['admin', 'atasan'];
@@ -122,6 +123,14 @@ export const aksiPersetujuan: KumpulanAksi = {
       await exec("UPDATE pengajuan SET status='Disetujui', catatan_hr=?, approver=?, tgl_putusan=NOW() WHERE id=?", [catatan, oleh, id]);
     });
     await logAksi(u.id, 'setujui_pengajuan', `${x.jenis} ${x.tanggal} #${id}`);
+    // slip periode final tidak dihitung ulang, jadi lembur ini perlu ditambahkan manual agar tetap terbayar
+    const periode = String(x.tanggal).slice(0, 7);
+    if (x.jenis === 'lembur' && (await periodeTerkunci(periode))) {
+      pesan += `. Payroll ${periode} sudah final, jadi HC perlu menambahkan lembur ini lewat penyesuaian payroll`;
+      const hc = (await q("SELECT id FROM users WHERE aktif=1 AND role IN ('admin','direktur')")).map((y) => y.id as number);
+      await beriTahu(hc, { jenis: 'payroll', tautan: '/payroll', judul: `Lembur ${kar.nama} disetujui setelah payroll final`,
+        isi: `${tglIdn(x.tanggal)} · ${x.menit} menit · payroll ${periode} sudah final. Tambahkan lewat penyesuaian payroll agar terbayar.` });
+    }
     await beriTahu([x.user_id], { jenis: 'approval', tautan: x.jenis === 'lembur' ? '/pengajuan' : '/riwayat', judul: `${labelJenis(x.jenis)} Anda disetujui`,
       isi: `${tglIdn(x.tanggal)} · ${pesan.replace(/^Disetujui — /, '')} · ${oleh}${catatan ? ' · ' + catatan : ''}` });
     return { pesan };

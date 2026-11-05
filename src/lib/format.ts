@@ -1,7 +1,7 @@
 /* Bentuk data yang dikirim ke tampilan (sama dengan versi PHP). */
 import type { Baris } from './db';
 import {
-  bulanKerja, cabangById, cutiAktif, cutiTerpakai, hariLiburMingguan, jatahCuti, labelJenis, labelKet, shiftById, sisaCuti, type User,
+  bulanKerja, cabangById, cutiAktif, cutiPenyesuaian, cutiTerpakai, hariLiburMingguan, jatahCuti, labelJenis, labelKet, shiftById, sisaCuti, type User,
 } from './aturan';
 import { gagal, type Masukan } from './http';
 import { POLA_TGL } from './waktu';
@@ -23,7 +23,7 @@ export async function userPublik(u: User) {
     jamMode: u.jam_mode, shiftId: u.shift_id, shiftNama: sh?.nama ?? '', targetMenit: u.target_menit,
     intiMulai: jam5(u.inti_mulai), intiSelesai: jam5(u.inti_selesai),
     liburHari: u.libur_hari ?? null, liburHariEfektif: await hariLiburMingguan(u),
-    cutiAktif: aktif, jatahEfektif: jatahCuti(u), terpakai: await cutiTerpakai(u.id), sisa: aktif ? await sisaCuti(u) : 0,
+    cutiAktif: aktif, jatahEfektif: jatahCuti(u), terpakai: await cutiTerpakai(u.id), cutiPenyesuaian: await cutiPenyesuaian(u.id), sisa: aktif ? await sisaCuti(u) : 0,
     masaKerjaBulan: bulanKerja(u.tgl_masuk),
     atasanId: u.atasan_id || null, unitId: u.unit_id || null, jabatanId: u.jabatan_id || null, statusKerja: u.status_kerja ?? 'tetap',
     kontrakMulai: u.kontrak_mulai ?? null, kontrakSelesai: u.kontrak_selesai ?? null, tglKeluar: u.tgl_keluar ?? null,

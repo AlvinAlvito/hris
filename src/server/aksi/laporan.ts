@@ -1,7 +1,7 @@
 /* Laporan: absensi per tanggal / rentang tanggal (HC), cuti per pegawai dan lembur per pegawai (HC semua, Supervisor timnya) */
 import { q, q1, type Baris } from '@/lib/db';
 import { gagal, i, s } from '@/lib/http';
-import { cakupanTim, cutiAktif, cutiPending, cutiTerpakai, jadwalHari, jatahCuti, KET_TETAP_KERJA, labelKet, need, sqlCakupan } from '@/lib/aturan';
+import { cakupanTim, cutiAktif, cutiPenyesuaian, cutiPending, cutiTerpakai, jadwalHari, jatahCuti, KET_TETAP_KERJA, labelKet, need, sisaCuti, sqlCakupan } from '@/lib/aturan';
 import { setg } from '@/lib/pengaturan';
 import { epoch, jamWIB, POLA_TGL, tambahHari, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
@@ -129,7 +129,7 @@ export const aksiLaporan: KumpulanAksi = {
       const jatah = jatahCuti(u), pakai = await cutiTerpakai(u.id, th), iz = izin[u.id] ?? {};
       hasil.push({
         userId: u.id, nik: u.nik, nama: u.nama, divisi: u.dept, jabatan: u.jabatan, berhak: cutiAktif(u), jatah, terpakai: pakai,
-        menunggu: await cutiPending(u.id, th), sisa: jatah - pakai, cuti: detail[u.id] ?? [],
+        menunggu: await cutiPending(u.id, th), penyesuaian: await cutiPenyesuaian(u.id, th), sisa: await sisaCuti(u, th), cuti: detail[u.id] ?? [],
         sakit: iz.sakit ?? 0, izin: (iz.izin ?? 0) + (iz.keperluan ?? 0) + (iz.lainnya ?? 0),
         setengahHari: iz.setengah_hari ?? 0, wfh: iz.wfh ?? 0, dlk: iz.dlk ?? 0,
       });

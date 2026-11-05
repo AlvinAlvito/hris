@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { exec, nilai, q, q1, sisipkan, type Baris } from '@/lib/db';
 import { b, f, gagal, i, s, teksPanjang } from '@/lib/http';
 import {
-  batasJamTerbuka, cabangPublik, cakupanTim, cutiAktif, jadwalHari, jamKerjaHari, jamTeks, labelKet, logAksi, need, sisaCuti, sqlCakupan,
+  aturSisaCuti, batasJamTerbuka, cabangPublik, cakupanTim, cutiAktif, jadwalHari, jamKerjaHari, jamTeks, labelKet, logAksi, need, sisaCuti, sqlCakupan,
 } from '@/lib/aturan';
 import { hitungAbsensi } from '@/lib/absensiHitung';
 import { beriTahu } from '@/lib/notifikasi';
@@ -168,10 +168,14 @@ export const aksiAdmin: KumpulanAksi = {
     if ('atasanId' in m) data.atasan_id = atasanId;
     if (!POLA_TGL.test(data.tgl_masuk)) gagal('Tanggal masuk tidak sah');
     if (pin !== '' && !/^\d{4,8}$/.test(pin)) gagal('PIN harus 4–8 digit angka');
+    // hanya dikirim formulir bila HC mengubahnya
+    const sisaBaru = m.sisaCuti === undefined || m.sisaCuti === null || m.sisaCuti === '' ? null : Number(m.sisaCuti);
+    if (sisaBaru !== null && (!Number.isInteger(sisaBaru) || sisaBaru < 0 || sisaBaru > 60)) gagal('Sisa cuti harus angka bulat 0–60 hari');
     let idBaru = id;
     if (id) {
       const lama = await q1('SELECT * FROM users WHERE id=?', [id]);
       if (!lama) gagal('Karyawan tidak ditemukan');
+      if (sisaBaru !== null && !cutiAktif({ ...lama, ...data })) gagal('Hak cuti karyawan ini belum aktif, jadi sisa cuti belum bisa diatur');
       if (lama.role === 'direktur' && role !== 'direktur' && Number(await nilai("SELECT COUNT(*) FROM users WHERE role='direktur'")) < 2)
         gagal('Minimal harus ada satu akun Super Admin');
       if (lm === 'lapangan' && (lama.base_lat === null || Number(lama.base_lat) !== baseLat)) { data.base_set_by = u.nama; data.base_set_at = sekarangSql(); }
@@ -197,6 +201,11 @@ export const aksiAdmin: KumpulanAksi = {
       }
       await exec(`UPDATE users SET ${k.map((x) => `${x}=:${x}`).join(',')} WHERE id=:__id`, { ...data, __id: id });
       await logAksi(u.id, 'edit_karyawan', nik);
+      if (sisaBaru !== null) {
+        const baru = (await q1('SELECT * FROM users WHERE id=?', [id]))!;
+        await aturSisaCuti(baru, sisaBaru, u.nama);
+        await logAksi(u.id, 'ubah_sisa_cuti', `${nik}: sisa ${sisaBaru} hari`);
+      }
       if (pindah) return { pesan: `Data karyawan tersimpan · ${pindah} bawahan dipindahkan`, id };
     } else {
       if (!/^\d{4,8}$/.test(pin)) gagal('PIN harus 4–8 digit angka');

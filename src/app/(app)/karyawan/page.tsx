@@ -172,7 +172,7 @@ function FormKaryawan({ u, list, cabang, org, selesai, awal, dariLamaran }: { u:
     tglMasuk: u?.tglMasuk ?? todayStr(), role: ['admin', 'direktur', 'atasan'].includes(u?.role) ? u!.role : 'karyawan', atasanId: u?.atasanId ?? 0,
     unitId: u?.unitId ?? 0, jabatanId: u?.jabatanId ?? 0,
     statusKerja: u?.statusKerja ?? 'tetap', tglKeluar: u?.tglKeluar ?? '', kontrakMulai: u?.kontrakMulai ?? '', kontrakSelesai: u?.kontrakSelesai ?? '',
-    cutiMode: u?.cutiMode ?? 'auto', jatah: u?.jatah ?? settings.jatahDefault, jamMode: u?.jamMode === 'fleksibel' ? 'fleksibel' : 'tetap',
+    cutiMode: u?.cutiMode ?? 'auto', jatah: u?.jatah ?? settings.jatahDefault, sisaCuti: u?.cutiAktif ? u.sisa : '', jamMode: u?.jamMode === 'fleksibel' ? 'fleksibel' : 'tetap',
     targetMenit: u?.targetMenit ?? 480, intiMulai: u?.intiMulai ?? '', intiSelesai: u?.intiSelesai ?? '', liburHari: u?.liburHari ?? '',
     lokasiMode: u?.lokasiMode ?? 'kantor', minJarakKm: u?.minJarakKm ?? settings.minJarakDefault, baseLabel: u?.baseLabel ?? '',
     baseLat: u?.baseLat ?? null, baseLng: u?.baseLng ?? null, aktif: u ? (u.aktif ? 1 : 0) : 1,
@@ -206,6 +206,7 @@ function FormKaryawan({ u, list, cabang, org, selesai, awal, dariLamaran }: { u:
     setKirim(true);
     try {
       const r = await api<{ pesan: string; id: number }>('adm_user_save', { ...v, id: u?.id ?? 0, cabangId: +v.cabangId, atasanId: +v.atasanId, jatah: +v.jatah,
+        sisaCuti: u?.cutiAktif && String(v.sisaCuti) !== String(u.sisa) ? v.sisaCuti : undefined,
         unitId: +v.unitId, jabatanId: +v.jabatanId, targetMenit: +v.targetMenit, minJarakKm: +v.minJarakKm, aktif: +v.aktif,
         pindahBawahanKe: bawahan.length ? bawahanKe : 0 });
       if (dariLamaran && r.id) await api('rk_tautkan_karyawan', { id: dariLamaran.lamaranId, userId: r.id }, true).catch(() => {});
@@ -270,6 +271,10 @@ function FormKaryawan({ u, list, cabang, org, selesai, awal, dariLamaran }: { u:
       <select value={v.cutiMode} onChange={set('cutiMode')}><option value="auto">Otomatis — aktif setelah 12 bulan kerja</option>
         <option value="on">ON — paksa aktifkan</option><option value="off">OFF — nonaktifkan</option></select>
       <label>Jatah cuti per tahun (hari)</label><input type="number" min={0} max={60} value={v.jatah} onChange={set('jatah')} />
+      {u?.cutiAktif ? <>
+        <label>Sisa cuti tahun {new Date().getFullYear()} (hari)</label><input type="number" min={0} max={60} value={v.sisaCuti} onChange={set('sisaCuti')} />
+        <div className="tiny muted" style={{ marginTop: 4 }}>Ubah bila sebagian cuti tahun ini sudah dipakai di luar HRIS. Cuti yang disetujui nanti tetap mengurangi angka ini, dan tahun depan kembali ke jatah penuh.</div></>
+        : u && <div className="tiny muted" style={{ marginTop: 6 }}>Sisa cuti bisa diatur setelah hak cuti karyawan ini aktif.</div>}
       <div className="sep" />
       <label style={{ marginTop: 0 }}>Pola jam kerja</label>
       <select value={v.jamMode} onChange={set('jamMode')}><option value="tetap">Tetap — jam kerja per hari sesuai Pengaturan</option>
