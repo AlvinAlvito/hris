@@ -34,7 +34,7 @@ export const aksiPersetujuan: KumpulanAksi = {
     const hasil = [];
     for (const r of rows) {
       const p = await q1('SELECT * FROM users WHERE id=?', [r.user_id]);
-      hasil.push({ ...cutiRow(r), sisaPemohon: p && cutiAktif(p) ? await sisaCuti(p) : null });
+      hasil.push({ ...cutiRow(r), sisaPemohon: p && cutiAktif(p) ? await sisaCuti(p, r.mulai) : null });
     }
     return m.all ? hasil : hasilHalaman(hasil, total, h.page);
   },
@@ -49,7 +49,7 @@ export const aksiPersetujuan: KumpulanAksi = {
     if (st === 'Disetujui' && c.jenis === 'Cuti Tahunan') {
       const p = await q1('SELECT * FROM users WHERE id=?', [c.user_id]);
       if (!p || !cutiAktif(p)) gagal('Karyawan belum berhak cuti tahunan');
-      const sisa = await sisaCuti(p);
+      const sisa = await sisaCuti(p, c.mulai);
       if (c.hari > sisa) gagal(`Sisa cuti tidak mencukupi (${sisa} hari)`);
     }
     await exec('UPDATE cuti SET status=?,catatan=?,approver=?,tgl_putusan=NOW() WHERE id=?', [st, cat, labelPenyetuju(u), id]);

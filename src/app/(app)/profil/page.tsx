@@ -10,7 +10,7 @@ import { PengaturanNotif } from '@/components/Notifikasi';
 import { api } from '@/lib/klien/api';
 import { bacaBerkas } from '@/lib/klien/berkas';
 import { FIELD_BIO, STATUS_KERJA, teksPilihan } from '@/lib/klien/biodata';
-import { labelRole, masaKerjaTeks, tglIndo, tglPendek } from '@/lib/klien/format';
+import { labelRole, masaKerjaTeks, rentangTgl, tglIndo, tglPendek } from '@/lib/klien/format';
 
 type Data = Record<string, any>;
 const TAB: [string, string, string][] = [['kerja', 'briefcase', 'Kepegawaian'], ['diri', 'id-card', 'Data Diri'], ['dok', 'file-text', 'Dokumen'], ['akun', 'key-round', 'Akun']];
@@ -64,7 +64,7 @@ export default function Profil() {
           <Kv k="Tanggal masuk" v={tglIndo(u.tglMasuk)} /><Kv k="Atasan langsung" v={u.atasanNama || '—'} />
           {u.jumlahBawahan > 0 && <Kv k="Bawahan langsung" v={u.jumlahBawahan + ' orang'} />}
           <Kv k="Lokasi kerja" v={u.cabangNama || '—'} /><Kv k="Pola jam kerja" v={pola} /><Kv k="Mode absen" v={modeAbsen} />
-          {!isDir(me) && <Kv k="Hak cuti" v={u.cutiAktif ? `Aktif (${u.jatahEfektif} hari/tahun, sisa ${u.sisa})` : 'Belum aktif'} />}
+          {!isDir(me) && <Kv k="Hak cuti" v={u.cutiAktif ? `Aktif (${u.jatahEfektif} hari per periode, sisa ${u.sisa}; periode ${rentangTgl(u.cutiPeriode?.mulai, u.cutiPeriode?.selesai)})` : 'Belum aktif'} />}
           <Kv k="Rekening gaji" v={u.bankRekening ? `${u.bankNama} · ${u.bankRekening}` : 'belum diisi — hubungi HC'} />
           <Kv k="NPWP" v={u.npwp || '—'} /><Kv k="BPJS Kesehatan" v={u.bpjsKesNo || '—'} /><Kv k="BPJS Ketenagakerjaan" v={u.bpjsTkNo || '—'} />
         </div>}

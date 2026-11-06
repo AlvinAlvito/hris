@@ -1,7 +1,7 @@
 /* Alat (tools) AI Asisten. Angka kehadiran memakai lib/statusHarian (rumus yang sama dengan Rekap & Payroll),
    sehingga jawaban AI konsisten dengan aplikasi. Semua hanya membaca data. */
 import { kueriBacaSaja, nilai, q, q1, type Baris } from '../db';
-import { bulanKerja, cutiAktif, cutiPenyesuaian, cutiTerpakai, jatahCuti, labelJenis, labelKet, sisaCuti } from '../aturan';
+import { bulanKerja, cutiAktif, cutiPenyesuaian, cutiTerpakai, jatahCuti, labelJenis, labelKet, periodeCuti, sisaCuti } from '../aturan';
 import { statusHarian, hitungStatus } from '../statusHarian';
 import { jadwalKerja, setg, setgInt } from '../pengaturan';
 import { POLA_TGL, tglWIB } from '../waktu';
@@ -127,7 +127,7 @@ async function ringkasanKaryawan(a: Baris) {
     kehadiran: st,
     izin_disetujui_per_jenis: Object.fromEntries(izin.map((x) => [labelKet(x.jenis), Number(x.n)])),
     cuti_pada_periode: cuti,
-    cuti_tahunan: { berhak: cutiAktif(u), jatah: jatahCuti(u), terpakai_tahun_ini: await cutiTerpakai(u.id, tahun), terpakai_di_luar_hris: await cutiPenyesuaian(u.id, tahun), sisa: cutiAktif(u) ? await sisaCuti(u) : 0 },
+    cuti_tahunan: { berhak: cutiAktif(u), jatah: jatahCuti(u), periode: periodeCuti(u), keterangan_periode: 'periode cuti = 12 bulan sejak tanggal masuk, bukan tahun kalender', terpakai_periode_ini: await cutiTerpakai(u), terpakai_di_luar_hris: await cutiPenyesuaian(u), sisa: cutiAktif(u) ? await sisaCuti(u) : 0 },
     pengajuan_lain: aju.map((x) => ({ jenis: labelJenis(x.jenis), status: x.status, jumlah: Number(x.n) })),
     keterlambatan_terbesar: telatTerbesar.map((x) => ({ tanggal: x.tanggal, masuk: jam5(x.in_time), jadwal: jam5(x.jadwal_in), menit: Number(x.menit_telat) })),
   };

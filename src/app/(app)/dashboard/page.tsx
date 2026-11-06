@@ -7,7 +7,8 @@ import { Avatar } from '@/components/Avatar';
 import { adaWebGL, Grafik, palet } from '@/components/Grafik';
 import { Ikon } from '@/components/Ikon';
 import { api } from '@/lib/klien/api';
-import { jamKerjaTeks, labelRole, NAMA_BULAN, periodeTeks, rupiah, tglIndo, tglPendek } from '@/lib/klien/format';
+import { keExcel } from '@/lib/klien/excel';
+import { jamKerjaTeks, labelRole, NAMA_BULAN, periodeTeks, rupiah, tglIndo, tglPendek, todayStr } from '@/lib/klien/format';
 
 type Data = Record<string, any>;
 
@@ -32,15 +33,21 @@ export default function Dashboard() {
   const o = useOpsiGrafik(g, pay, tigaD, putar, tema);
 
   const h = g?.hariIni;
-  const kpi: [string, string, string | number, string, boolean?][] = g ? [
-    ['users', 'Karyawan aktif', g.total, ''], ['circle-check', 'Hadir hari ini', h.hadir + h.telat, 'c-green'], ['clock-alert', 'Terlambat', h.telat, 'c-amber'],
-    ['plane', 'Cuti / izin', h.cuti + h.ket, 'c-cyan'], ['hourglass', 'Belum absen', h.belum, 'c-red'], ['inbox', 'Menunggu persetujuan', inbox.total, 'c-gray', true]] : [];
+  // [ikon, judul, nilai, warna, status yang termasuk (null = semua karyawan); kartu persetujuan membuka menu Persetujuan]
+  const kpi: [string, string, string | number, string, string[] | null | 'persetujuan'][] = g ? [
+    ['users', 'Karyawan aktif', g.total, '', null], ['circle-check', 'Hadir hari ini', h.hadir + h.telat, 'c-green', ['hadir', 'telat', 'setengah']],
+    ['clock-alert', 'Terlambat', h.telat, 'c-amber', ['telat']], ['plane', 'Cuti / izin', h.cuti + h.ket, 'c-cyan', ['cuti', 'ket']],
+    ['hourglass', 'Belum absen', h.belum, 'c-red', ['belum']], ['inbox', 'Menunggu persetujuan', inbox.total, 'c-gray', 'persetujuan']] : [];
+  const rincian = (judul: string, status: string[] | null) =>
+    bukaSheet(<RincianKartu judul={judul} tanggal={g!.tanggal[g!.tanggal.length - 1]} daftar={(g!.orang as Data[]).filter((x) => !status || status.includes(x.status))} semua={!status} />, { besar: true });
   const fotoBesar = (src: string, nama: string) => bukaSheet(<><h3>{nama}</h3><img src={src} alt="" style={{ width: '100%', borderRadius: 14 }} /></>);
 
   return (<>
-    <div className="kpis">{g ? kpi.map(([ic, k, v, w, link]) => {
-      const isi = <><div className="ico"><Ikon n={ic} /></div><div className="v">{v}</div><div className="k">{k}</div></>;
-      return link ? <Link key={k} href="/persetujuan" className={'kpi ' + w} style={{ textDecoration: 'none', color: 'inherit' }}>{isi}</Link> : <div key={k} className={'kpi ' + w}>{isi}</div>;
+    <div className="kpis">{g ? kpi.map(([ic, k, v, w, isiKartu]) => {
+      const isi = <><div className="ico"><Ikon n={ic} /></div><div className="v">{v}</div><div className="k">{k}</div>
+        <div className="tiny muted">{isiKartu === 'persetujuan' ? 'Buka Persetujuan' : 'Lihat daftar'} →</div></>;
+      return isiKartu === 'persetujuan' ? <Link key={k} href="/persetujuan" className={'kpi lap-k ' + w} style={{ textDecoration: 'none' }}>{isi}</Link>
+        : <button key={k} className={'kpi lap-k ' + w} onClick={() => rincian(k, isiKartu)}>{isi}</button>;
     }) : Array.from({ length: 6 }, (_, i) => <div key={i} className="kpi"><div className="skel" style={{ height: 86 }} /></div>)}</div>
 
     <div className="grid-2">
@@ -92,6 +99,40 @@ export default function Dashboard() {
                 <td>{r.foto ? <img src={r.foto} alt="" loading="lazy" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 10, cursor: 'pointer' }} onClick={() => fotoBesar(r.foto, r.nama)} /> : '—'}</td></tr>);
           })}</tbody></table></div>)}
     </div>
+  </>);
+}
+
+/* daftar karyawan di balik satu kartu, dengan pencarian & ekspor Excel */
+function RincianKartu({ judul, tanggal, daftar, semua }: { judul: string; tanggal: string; daftar: Data[]; semua: boolean }) {
+  const { tutupSheet, galat } = useAplikasi();
+  const [cari, setCari] = useState(''), [hp, setHp] = useState(false);
+  useEffect(() => { const mq = matchMedia('(max-width: 640px)'); const ubah = () => setHp(mq.matches); ubah(); mq.addEventListener('change', ubah); return () => mq.removeEventListener('change', ubah); }, []);
+  const kata = cari.trim().toLowerCase();
+  const warna = (st: string) => ({ hadir: 'b-green', setengah: 'b-green', telat: 'b-amber', cuti: 'b-blue', ket: 'b-blue', belum: 'b-red' } as Record<string, string>)[st] || 'b-gray';
+  const tampil = kata ? daftar.filter((x) => `${x.nama} ${x.nik} ${x.divisi} ${x.jabatan} ${x.lokasi}`.toLowerCase().includes(kata)) : daftar;
+  const ekspor = () => keExcel(daftar.map((x) => ({ NIK: x.nik, Nama: x.nama, Divisi: x.divisi, Jabatan: x.jabatan, Lokasi: x.lokasi, 'Status Hari Ini': x.statusLabel,
+    Masuk: x.masuk, Pulang: x.pulang, 'Telat (menit)': x.telat || '', Keterangan: x.keterangan || x.dari, ...(semua ? { 'Status Kerja': x.statusKerja, 'Tanggal Masuk': x.tglMasuk } : {}) })),
+  judul.slice(0, 30), `${judul.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${todayStr()}`).catch(galat);
+  return (<>
+    <div className="page-head" style={{ margin: 0 }}><div><h3 style={{ margin: 0 }}>{judul} <span className="m">{daftar.length} orang</span></h3>
+      <div className="tiny muted">{tglIndo(tanggal)}</div></div>
+      {daftar.length > 0 && <button className="btn ghost sm auto" onClick={ekspor}><Ikon n="download" />Excel</button>}</div>
+    {daftar.length > 6 && <input style={{ marginTop: 10 }} placeholder="Cari nama, NIK, divisi" value={cari} onChange={(e) => setCari(e.target.value)} />}
+    {!daftar.length ? <div className="empty"><Ikon n="inbox" />Tidak ada karyawan pada kartu ini.</div> : hp ? tampil.map((x) => (
+      <div key={x.id} className="item"><div className="top"><div className="orang"><Avatar u={x} ukuran={30} /><div><div className="nm">{x.nama}</div>
+        <div className="dt">{x.divisi || '—'}{x.masuk && ` · masuk ${x.masuk}`}{x.pulang && ` · pulang ${x.pulang}`}{(x.keterangan || x.dari) && ` · ${x.keterangan || x.dari}`}</div></div></div>
+        <span className={'badge ' + warna(x.status)}>{x.statusLabel}{x.telat ? ` ${x.telat}m` : ''}</span></div></div>)) : (
+      <div className="tblwrap"><table><thead><tr><th>Karyawan</th><th>Divisi</th><th>Status</th><th>Masuk</th><th>Pulang</th><th>Keterangan</th></tr></thead><tbody>
+        {tampil.map((x) => <tr key={x.id}>
+          <td><div className="orang"><Avatar u={x} ukuran={30} /><div><b>{x.nama}</b><div className="tiny muted">{x.nik}{x.jabatan && ' · ' + x.jabatan}</div></div></div></td>
+          <td>{x.divisi || '—'}</td>
+          <td><span className={'badge ' + warna(x.status)}>
+            {x.statusLabel}{x.telat ? ` ${x.telat}m` : ''}</span></td>
+          <td className="num">{x.masuk || '—'}</td><td className="num">{x.pulang || '—'}</td>
+          <td>{x.keterangan || x.dari || (semua ? x.lokasi : '') || '—'}</td></tr>)}
+      </tbody></table></div>)}
+    {kata && !tampil.length && <div className="empty">Tidak ada yang cocok dengan pencarian.</div>}
+    <button className="btn ghost" style={{ marginTop: 12 }} onClick={tutupSheet}>Tutup</button>
   </>);
 }
 

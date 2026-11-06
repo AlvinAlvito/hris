@@ -476,7 +476,7 @@ CREATE TABLE IF NOT EXISTS pajak_saldo_awal (
 
 CREATE TABLE IF NOT EXISTS cuti_penyesuaian (
   user_id     INT NOT NULL,
-  tahun       INT NOT NULL,
+  tahun       INT NOT NULL,                          -- tahun mulai periode cuti (periode = 12 bulan sejak tanggal masuk)
   hari        INT NOT NULL DEFAULT 0,                -- cuti tahunan terpakai di luar HRIS, negatif berarti sisa melebihi jatah
   diubah_oleh VARCHAR(150) NOT NULL DEFAULT '',
   diubah_pada DATETIME NULL,

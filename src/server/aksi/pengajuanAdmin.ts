@@ -47,7 +47,7 @@ export const aksiPengajuanAdmin: KumpulanAksi = {
           const hari = await hitungHari(mulai, sampai, jenis);
           if (ada) r.dilewati.push('sudah ada cuti pada rentang ini');
           else if (hari < 1) r.dilewati.push('rentang hanya berisi hari libur');
-          else if (jenis === 'Cuti Tahunan' && setuju && (!cutiAktif(k) || hari > (await sisaCuti(k)))) r.dilewati.push(cutiAktif(k) ? `sisa cuti tidak cukup (${await sisaCuti(k)} hari)` : 'belum berhak cuti tahunan');
+          else if (jenis === 'Cuti Tahunan' && setuju && (!cutiAktif(k) || hari > (await sisaCuti(k, mulai)))) r.dilewati.push(cutiAktif(k) ? `sisa cuti tidak cukup (${await sisaCuti(k)} hari)` : 'belum berhak cuti tahunan');
           else {
             await exec(`INSERT INTO cuti (user_id,jenis,mulai,selesai,hari,alasan,status,approver,tgl_putusan,dibuat_oleh) VALUES (?,?,?,?,?,?,?,?,?,?)`,
               [k.id, jenis, mulai, sampai, hari, alasan || jenis, setuju ? 'Disetujui' : 'Menunggu', setuju ? pembuat : '', setuju ? sekarangSql() : null, pembuat]);
@@ -131,7 +131,7 @@ export const aksiPengajuanAdmin: KumpulanAksi = {
     if (status === 'Disetujui' && jenis === 'Cuti Tahunan') {
       const p = await q1('SELECT * FROM users WHERE id=?', [c.user_id]);
       // sisa dihitung tanpa cuti ini sendiri bila sebelumnya sudah disetujui
-      const sisa = (await sisaCuti(p!)) + (c.status === 'Disetujui' && c.jenis === 'Cuti Tahunan' ? Number(c.hari) : 0);
+      const sisa = (await sisaCuti(p!, mulai)) + (c.status === 'Disetujui' && c.jenis === 'Cuti Tahunan' ? Number(c.hari) : 0);
       if (!cutiAktif(p!)) gagal('Karyawan belum berhak cuti tahunan');
       if (hari > sisa) gagal(`Sisa cuti tidak mencukupi (${sisa} hari)`);
     }

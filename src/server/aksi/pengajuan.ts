@@ -19,7 +19,7 @@ export const aksiPengajuan: KumpulanAksi = {
   /* ---------- cuti ---------- */
   async cuti_saya() {
     const u = await need();
-    return { me: await userPublik(u), pending: await cutiPending(u.id) };
+    return { me: await userPublik(u), pending: await cutiPending(u) };
   },
   async cuti_ajukan(m) {
     const u = await need();
@@ -33,7 +33,7 @@ export const aksiPengajuan: KumpulanAksi = {
     if (hari <= 0) gagal('Rentang tanggal tidak valid');
     if (jenis === 'Cuti Tahunan') {
       if (!cutiAktif(u)) gagal('Anda belum berhak cuti tahunan');
-      const sisa = (await sisaCuti(u)) - (await cutiPending(u.id));
+      const sisa = (await sisaCuti(u, mulai)) - (await cutiPending(u, mulai));
       if (hari > sisa) gagal(`Melebihi sisa cuti (${sisa} hari)`);
     }
     const ins = await exec('INSERT INTO cuti (user_id,jenis,mulai,selesai,hari,alasan,status) VALUES (?,?,?,?,?,?,?)', [u.id, jenis, mulai, selesai, hari, alasan, 'Menunggu']);

@@ -14,7 +14,7 @@ import { api } from '@/lib/klien/api';
 import { bacaBerkas } from '@/lib/klien/berkas';
 import { FIELD_BIO, STATUS_KERJA } from '@/lib/klien/biodata';
 import { keExcel } from '@/lib/klien/excel';
-import { labelRole, masaKerjaTeks, tglPendek, todayStr } from '@/lib/klien/format';
+import { labelRole, masaKerjaTeks, rentangTgl, tglPendek, todayStr } from '@/lib/klien/format';
 import { normalisasiNomorWhatsApp } from '@/lib/telepon';
 
 type Data = Record<string, any>;
@@ -272,8 +272,8 @@ function FormKaryawan({ u, list, cabang, org, selesai, awal, dariLamaran }: { u:
         <option value="on">ON — paksa aktifkan</option><option value="off">OFF — nonaktifkan</option></select>
       <label>Jatah cuti per tahun (hari)</label><input type="number" min={0} max={60} value={v.jatah} onChange={set('jatah')} />
       {u?.cutiAktif ? <>
-        <label>Sisa cuti tahun {new Date().getFullYear()} (hari)</label><input type="number" min={0} max={60} value={v.sisaCuti} onChange={set('sisaCuti')} />
-        <div className="tiny muted" style={{ marginTop: 4 }}>Ubah bila sebagian cuti tahun ini sudah dipakai di luar HRIS. Cuti yang disetujui nanti tetap mengurangi angka ini, dan tahun depan kembali ke jatah penuh.</div></>
+        <label>Sisa cuti periode {rentangTgl(u.cutiPeriode?.mulai, u.cutiPeriode?.selesai)} (hari)</label><input type="number" min={0} max={60} value={v.sisaCuti} onChange={set('sisaCuti')} />
+        <div className="tiny muted" style={{ marginTop: 4 }}>Ubah bila sebagian cuti periode ini sudah dipakai di luar HRIS. Cuti yang disetujui nanti tetap mengurangi angka ini. Periode cuti berulang tiap 12 bulan sejak tanggal masuk, lalu jatah kembali penuh.</div></>
         : u && <div className="tiny muted" style={{ marginTop: 6 }}>Sisa cuti bisa diatur setelah hak cuti karyawan ini aktif.</div>}
       <div className="sep" />
       <label style={{ marginTop: 0 }}>Pola jam kerja</label>

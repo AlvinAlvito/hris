@@ -1,7 +1,7 @@
 /* Laporan: absensi per tanggal / rentang tanggal (HC), cuti per pegawai dan lembur per pegawai (HC semua, Supervisor timnya) */
 import { q, q1, type Baris } from '@/lib/db';
 import { gagal, i, s } from '@/lib/http';
-import { cakupanTim, cutiAktif, cutiPenyesuaian, cutiPending, cutiTerpakai, jadwalHari, jatahCuti, KET_TETAP_KERJA, labelKet, need, sisaCuti, sqlCakupan } from '@/lib/aturan';
+import { cakupanTim, cutiAktif, cutiPenyesuaian, cutiPending, cutiTerpakai, jadwalHari, jatahCuti, KET_TETAP_KERJA, labelKet, need, periodeCuti, sisaCuti, sqlCakupan } from '@/lib/aturan';
 import { setg } from '@/lib/pengaturan';
 import { epoch, jamWIB, POLA_TGL, tambahHari, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
@@ -112,24 +112,27 @@ export const aksiLaporan: KumpulanAksi = {
 
   async lap_cuti(m) {
     const u0 = await need(['atasan']), tim = await cakupanTim(u0);
-    const th = i(m, 'tahun', Number(tglWIB().slice(0, 4)));
+    // tiap karyawan punya periode sendiri (12 bulan sejak tanggal masuk); laporan memakai periode yang berlaku pada tanggal ini
+    const tgl = s(m, 'tanggal', tglWIB());
+    if (!POLA_TGL.test(tgl)) gagal('Tanggal tidak sah');
     const pg = paramHalaman(m), cariSql = (pg.cari ? ' AND (nama LIKE ? OR nik LIKE ? OR dept LIKE ?)' : '') + sqlCakupan(tim, 'id');
     const args: any[] = pg.cari ? Array(3).fill(polaCari(pg.cari)) : [];
     const count = await q1("SELECT COUNT(*) n FROM users WHERE aktif=1 AND role<>'direktur'" + cariSql, args);
     const users = await q("SELECT * FROM users WHERE aktif=1 AND role<>'direktur'" + cariSql + ' ORDER BY dept, nama' + (m.all ? '' : ' LIMIT 8 OFFSET ?'), m.all ? args : [...args, pg.offset]);
-    const detail: Record<number, Baris[]> = {};
-    for (const c of await q(`SELECT user_id, jenis, mulai, selesai, hari, alasan, approver FROM cuti
-      WHERE status='Disetujui' AND YEAR(mulai)=? ORDER BY mulai`, [th]))
-      (detail[c.user_id] ??= []).push({ jenis: c.jenis, mulai: c.mulai, selesai: c.selesai, hari: c.hari, alasan: c.alasan, approver: c.approver });
-    const izin: Record<number, Record<string, number>> = {};
-    for (const r of await q("SELECT user_id, jenis, COUNT(*) n FROM ketidakhadiran WHERE status='Disetujui' AND YEAR(tanggal)=? GROUP BY user_id, jenis", [th]))
-      (izin[r.user_id] ??= {})[r.jenis] = Number(r.n);
+    const ids = users.map((u) => Number(u.id)).join(',') || '0', luasDari = tambahHari(tgl, -366), luasSampai = tambahHari(tgl, 366);
+    const cutiAll = await q(`SELECT user_id, jenis, mulai, selesai, hari, alasan, approver FROM cuti
+      WHERE status='Disetujui' AND user_id IN (${ids}) AND mulai BETWEEN ? AND ? ORDER BY mulai`, [luasDari, luasSampai]);
+    const izinAll = await q(`SELECT user_id, jenis, tanggal FROM ketidakhadiran WHERE status='Disetujui' AND user_id IN (${ids}) AND tanggal BETWEEN ? AND ?`, [luasDari, luasSampai]);
     const hasil = [];
     for (const u of users) {
-      const jatah = jatahCuti(u), pakai = await cutiTerpakai(u.id, th), iz = izin[u.id] ?? {};
+      const p = periodeCuti(u, tgl), dalam = (t: string) => t >= p.mulai && t <= p.selesai;
+      const iz: Record<string, number> = {};
+      for (const r of izinAll) if (r.user_id === u.id && dalam(r.tanggal)) iz[r.jenis] = (iz[r.jenis] ?? 0) + 1;
+      const jatah = jatahCuti(u), pakai = await cutiTerpakai(u, tgl);
       hasil.push({
-        userId: u.id, nik: u.nik, nama: u.nama, divisi: u.dept, jabatan: u.jabatan, berhak: cutiAktif(u), jatah, terpakai: pakai,
-        menunggu: await cutiPending(u.id, th), penyesuaian: await cutiPenyesuaian(u.id, th), sisa: await sisaCuti(u, th), cuti: detail[u.id] ?? [],
+        userId: u.id, nik: u.nik, nama: u.nama, divisi: u.dept, jabatan: u.jabatan, berhak: cutiAktif(u), periode: p, jatah, terpakai: pakai,
+        menunggu: await cutiPending(u, tgl), penyesuaian: await cutiPenyesuaian(u, tgl), sisa: await sisaCuti(u, tgl),
+        cuti: cutiAll.filter((c) => c.user_id === u.id && dalam(c.mulai)).map((c) => ({ jenis: c.jenis, mulai: c.mulai, selesai: c.selesai, hari: c.hari, alasan: c.alasan, approver: c.approver })),
         sakit: iz.sakit ?? 0, izin: (iz.izin ?? 0) + (iz.keperluan ?? 0) + (iz.lainnya ?? 0),
         setengahHari: iz.setengah_hari ?? 0, wfh: iz.wfh ?? 0, dlk: iz.dlk ?? 0,
       });
