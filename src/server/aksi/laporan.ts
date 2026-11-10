@@ -1,9 +1,9 @@
 /* Laporan: absensi per tanggal / rentang tanggal (HC), cuti per pegawai dan lembur per pegawai (HC semua, Supervisor timnya) */
 import { q, q1, type Baris } from '@/lib/db';
 import { gagal, i, s } from '@/lib/http';
-import { cakupanTim, cutiAktif, cutiPenyesuaian, cutiPending, cutiTerpakai, jadwalHari, jatahCuti, KET_TETAP_KERJA, labelKet, need, periodeCuti, sisaCuti, sqlCakupan } from '@/lib/aturan';
+import { cakupanTim, cutiAktif, liburResmi, cutiPenyesuaian, cutiPending, cutiTerpakai, jadwalHari, jatahCuti, KET_TETAP_KERJA, labelKet, need, periodeCuti, sisaCuti, sqlCakupan } from '@/lib/aturan';
 import { setg } from '@/lib/pengaturan';
-import { epoch, jamWIB, POLA_TGL, tambahHari, tglWIB } from '@/lib/waktu';
+import { epoch, hariIso, jamWIB, POLA_TGL, tambahHari, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
 import { hasilHalaman, paramHalaman, polaCari } from '@/lib/paginasi';
 
@@ -101,13 +101,45 @@ export const aksiLaporan: KumpulanAksi = {
       m.all ? args : [...args, pg.limit, pg.offset]);
     const ids = baris.map((x) => Number(x.user_id)).join(',') || '0';
     const detail: Record<number, Baris[]> = {};
+    // hitungan upah lembur berbeda antara hari biasa, Sabtu, Minggu, dan libur nasional
+    const per: Record<number, Record<string, number>> = {};
     for (const r of await q(`SELECT p.user_id, p.tanggal, p.jam_mulai, p.jam_selesai, p.menit, p.alasan, p.status, p.approver FROM pengajuan p
-      WHERE p.jenis='lembur' AND p.status<>'Dibatalkan' AND p.tanggal BETWEEN ? AND ? AND p.user_id IN (${ids}) ORDER BY p.tanggal DESC, p.id DESC`, [dari, sampai]))
-      (detail[r.user_id] ??= []).push({ tanggal: r.tanggal, jamMulai: String(r.jam_mulai ?? '').slice(0, 5), jamSelesai: String(r.jam_selesai ?? '').slice(0, 5), menit: Number(r.menit), alasan: r.alasan, status: r.status, approver: r.approver });
+      WHERE p.jenis='lembur' AND p.status<>'Dibatalkan' AND p.tanggal BETWEEN ? AND ? AND p.user_id IN (${ids}) ORDER BY p.tanggal DESC, p.id DESC`, [dari, sampai])) {
+      const libur = await liburResmi(r.tanggal), h = hariIso(r.tanggal);
+      const jenisHari = libur ? 'libur' : h === 7 ? 'minggu' : h === 6 ? 'sabtu' : 'biasa';
+      (detail[r.user_id] ??= []).push({ tanggal: r.tanggal, jenisHari, namaLibur: libur?.nama ?? '', jamMulai: String(r.jam_mulai ?? '').slice(0, 5), jamSelesai: String(r.jam_selesai ?? '').slice(0, 5),
+        menit: Number(r.menit), alasan: r.alasan, status: r.status, approver: r.approver });
+      if (r.status === 'Disetujui') { const o = (per[r.user_id] ??= {}); o[jenisHari] = (o[jenisHari] ?? 0) + Number(r.menit); }
+    }
     const items = baris.map((x) => ({ userId: x.user_id, nik: x.nik, nama: x.nama, divisi: x.dept, jabatan: x.jabatan, menitDisetujui: Number(x.menit_setuju), jumlahDisetujui: Number(x.n_setuju),
+      menitPerHari: { biasa: 0, sabtu: 0, minggu: 0, libur: 0, ...per[x.user_id] },
       menitMenunggu: Number(x.menit_tunggu), jumlahMenunggu: Number(x.n_tunggu), jumlahDitolak: Number(x.n_tolak), rincian: detail[x.user_id] ?? [] }));
     if (m.all) return items;
     return { ...hasilHalaman(items, Number(tot?.orang ?? 0), pg.page), ringkas: { orang: Number(tot?.orang ?? 0), menitDisetujui: Number(tot?.menit_setuju ?? 0), menitMenunggu: Number(tot?.menit_tunggu ?? 0), jumlahMenunggu: Number(tot?.n_tunggu ?? 0) } };
+  },
+
+  /* Rekap keterlambatan untuk finance: periode absensi 27 bulan lalu – 26 bulan ini.
+     Denda per hari terlambat: sampai 20 menit tanpa denda, lalu Rp25.000 per 20 menit berikutnya (21–40 = 25 rb, 41–60 = 50 rb, dst). */
+  async lap_telat_finance(m) {
+    await need(['admin']);
+    const periode = s(m, 'periode');
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periode)) gagal('Periode tidak sah');
+    const [th, bl] = periode.split('-').map(Number), lalu = bl === 1 ? `${th - 1}-12` : `${th}-${String(bl - 1).padStart(2, '0')}`;
+    const dari = `${lalu}-27`, sampai = `${periode}-26`;
+    const tanggal: string[] = [];
+    for (let t = dari; t <= sampai; t = tambahHari(t, 1)) tanggal.push(t);
+    const libur: string[] = [];
+    for (const t of tanggal) if (await liburResmi(t)) libur.push(t);
+    const users = await q(`SELECT id, nik, nama, dept, role FROM users WHERE aktif=1 OR (tgl_keluar IS NOT NULL AND tgl_keluar >= ?) ORDER BY dept, nama`, [dari]);
+    const menit: Record<number, Record<string, number>> = {};
+    for (const r of await q(`SELECT user_id, tanggal, menit_telat FROM absensi WHERE tanggal BETWEEN ? AND ? AND terlambat=1 AND telat_diizinkan=0
+      AND approval<>'ditolak' AND in_time IS NOT NULL AND jam_mode<>'fleksibel'`, [dari, sampai])) (menit[r.user_id] ??= {})[r.tanggal] = Number(r.menit_telat);
+    const denda = (x: number) => (x <= 20 ? 0 : Math.ceil((x - 20) / 20) * 25000);
+    const karyawan = users.filter((u) => u.role !== 'direktur').map((u) => {
+      const mm = menit[u.id] ?? {}, nilaiHari = Object.values(mm);
+      return { nik: u.nik, nama: u.nama, divisi: u.dept, menit: mm, totalMenit: nilaiHari.reduce((a, x) => a + x, 0), potongan: nilaiHari.reduce((a, x) => a + denda(x), 0) };
+    });
+    return { periode, dari, sampai, tanggal, libur, direksi: users.filter((u) => u.role === 'direktur' && /direksi/i.test(String(u.dept ?? ''))).map((u) => ({ nik: u.nik, nama: u.nama })), karyawan };
   },
 
   async lap_cuti(m) {

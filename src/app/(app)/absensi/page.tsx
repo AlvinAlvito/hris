@@ -10,6 +10,7 @@ import { Ikon } from '@/components/Ikon';
 import { NavigasiHalaman, type HalamanData } from '@/components/NavigasiHalaman';
 import { api } from '@/lib/klien/api';
 import { keExcel } from '@/lib/klien/excel';
+import { unduhRekapTelat } from '@/lib/klien/excelTelat';
 import { jamKerjaTeks, km, labelRole, NAMA_BULAN, NAMA_HARI, pad, tglPendek, todayStr } from '@/lib/klien/format';
 
 type Data = Record<string, any>;
@@ -81,6 +82,7 @@ export default function Absensi() {
     Approval: a.approval, 'Approval Oleh': a.approvalOleh || '', 'Catatan Approval': a.approvalCatatan || '',
   })), 'Absensi', `absensi-${tgl}`)).catch(galat);
   const [th, bl] = tgl.split('-').map(Number);
+  const eksporTelat = () => api<Record<string, any>>('lap_telat_finance', { periode: `${th}-${pad(bl)}` }).then(unduhRekapTelat).catch(galat);
   const eksporRekap = () => api<Data[]>('adm_rekap', { bulan: bl, tahun: th, cabangId: cab }).then((rows) => keExcel(rows.map((r) => ({
     NIK: r.nik, Nama: r.nama, 'Lokasi Kerja': r.cabang || '', Divisi: r.dept, Jabatan: r.jabatan, Peran: labelRole(r.peran), 'Pola Jam': r.polaJam,
     Hadir: r.hadir, Terlambat: r.telat, 'Total Menit Telat': r.menitTelat, 'Belum Clock Out': r.belumOut,
@@ -129,7 +131,8 @@ export default function Absensi() {
         <button className="btn sm green" disabled={!pilih.size} onClick={setujuiTerpilih}><Ikon n="check-check" />Setujui terpilih ({pilih.size})</button>
         {!!data?.menunggu && <button className="btn sm green" onClick={setujuiSemua}><Ikon n="check-check" />Setujui semua yang menunggu ({data.menunggu})</button>}
         <button className="btn sm" onClick={eksporDetail}><Ikon n="download" />Export Excel (detail)</button>
-        {admin && <button className="btn sm ghost" onClick={eksporRekap}><Ikon n="download" />Export Rekap Bulanan ({NAMA_BULAN[bl - 1]} {th})</button>}</div>
+        {admin && <button className="btn sm ghost" onClick={eksporRekap}><Ikon n="download" />Export Rekap Bulanan ({NAMA_BULAN[bl - 1]} {th})</button>}
+        {admin && <button className="btn sm ghost" onClick={eksporTelat} title="Periode 27 bulan lalu – 26 bulan ini, dengan denda keterlambatan"><Ikon n="download" />Rekap Keterlambatan Finance ({NAMA_BULAN[bl - 1]} {th})</button>}</div>
       {!data ? <div className="skel" style={{ height: 140, marginTop: 12 }} /> : l.length ? (<>
         <div className="tblwrap"><table><thead><tr>
           <th><input type="checkbox" className="ra-pilih" aria-label="Pilih semua yang menunggu" disabled={!bisaPilih.length}
