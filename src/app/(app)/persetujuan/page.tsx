@@ -10,7 +10,7 @@ import { TautanBukti } from '@/components/BuktiPengajuan';
 import { NavigasiHalaman, type HalamanData } from '@/components/NavigasiHalaman';
 import { api } from '@/lib/klien/api';
 import { keExcel } from '@/lib/klien/excel';
-import { jamKerjaTeks, teksStatus, tglPendek, todayStr } from '@/lib/klien/format';
+import { jamKerjaTeks, teksStatus, tglHari, tglPendek, todayStr, waktuAjukan } from '@/lib/klien/format';
 
 type Data = Record<string, any>;
 const TUJUAN: Record<string, string> = { cuti: '/cuti', payroll: '/payroll', lupa: '/absensi', absen: '/absensi?menunggu=1', kontrak: '/karyawan', rekrutmen: '/kelola-rekrutmen', kpi: '/kelola-kpi' };
@@ -94,17 +94,18 @@ function DaftarPengajuan() {
     api<{ pesan: string }>('adm_pengajuan_hapus', { id: x.id }).then((r) => { toast(r.pesan); muat(); muatInbox(); }).catch(galat);
   };
   const ekspor = () => api<Data[]>('adm_pengajuan', { status: 'ALL', all: true, search }).then((l) => keExcel(l.map((x) => ({ Nama: x.nama, NIK: x.nik, Lokasi: x.cabang, Jenis: x.jenisLabel,
-    Tanggal: x.tanggal, Jam: x.jamMulai ? x.jamMulai + (x.jamSelesai ? `–${x.jamSelesai}` : '') : '', Sebelum: x.jadwalSebelum, Sesudah: x.jadwalSesudah, Alasan: x.alasan,
-    Status: teksStatus(x.status), 'Diputus Oleh': x.approver, 'Catatan Atasan': x.catatanHr })), 'Pengajuan', 'pengajuan-lembur-absen-' + todayStr())).catch(galat);
+    Hari: tglHari(x.tanggal).split(',')[0], Tanggal: x.tanggal, Jam: x.jamMulai ? x.jamMulai + (x.jamSelesai ? `–${x.jamSelesai}` : '') : '', Sebelum: x.jadwalSebelum, Sesudah: x.jadwalSesudah, Alasan: x.alasan,
+    'Waktu Diajukan': String(x.tglAjukan ?? '').slice(0, 16), Status: teksStatus(x.status), 'Diputus Oleh': x.approver, 'Catatan Atasan': x.catatanHr })), 'Pengajuan', 'pengajuan-lembur-absen-' + todayStr())).catch(galat);
   return (
     <div className="card"><Kepala ikon="clock" judul="Lembur, Lupa Absen & Izin Terlambat" opsi={['Menunggu HR', 'Disetujui', 'Ditolak HR', 'ALL']} filter={filter} setFilter={setFilter} ekspor={ekspor} />
       <KontrolDaftar search={search} setSearch={setSearch} />
       {!list ? <div className="skel" style={{ height: 90, marginTop: 12 }} /> : list.length ? <>{list.map((x) => (
         <div key={x.id} className="item">
           <div className="top"><div><div className="nm">{x.nama} · {x.jenisLabel}</div>
-            <div className="dt">{tglPendek(x.tanggal)} · {x.jenis === 'lembur' ? `${x.jamMulai}–${x.jamSelesai} (${jamKerjaTeks(x.menit)})`
+            <div className="dt">{tglHari(x.tanggal)} · {x.jenis === 'lembur' ? `${x.jamMulai}–${x.jamSelesai} (${jamKerjaTeks(x.menit)})`
               : <>{x.jadwalSebelum && <>{x.jadwalSebelum} → </>}<b>{x.jadwalSesudah || x.jamMulai}</b></>}
               {x.cabang && ' · ' + x.cabang}</div></div><Status st={x.status} /></div>
+          <div className="kv"><span>Diajukan</span><span style={{ textAlign: 'right' }}>{waktuAjukan(x.tglAjukan)}</span></div>
           <div className="kv"><span>Alasan</span><span style={{ textAlign: 'right' }}>{x.alasan}</span></div>
           <TautanBukti link={x.buktiLink} />
           {x.approver && <div className="kv"><span>Diputus oleh</span><span>{x.approver}</span></div>}
@@ -127,7 +128,7 @@ function DaftarIzin() {
     api<{ pesan: string }>('adm_ket_hapus', { id: x.id }).then((r) => { toast(r.pesan); muat(); muatInbox(); }).catch(galat);
   };
   const ekspor = () => api<Data[]>('adm_ketidakhadiran', { status: 'ALL', all: true, search }).then((l) => keExcel(l.map((x) => ({ Nama: x.nama, NIK: x.nik, Lokasi: x.cabang,
-    Jenis: x.jenisLabel + (x.sesi ? ` (${x.sesi})` : ''), Tanggal: x.tanggal, Keterangan: x.alasan, Status: teksStatus(x.status), 'Diputus Oleh': x.approver,
+    Jenis: x.jenisLabel + (x.sesi ? ` (${x.sesi})` : ''), Hari: tglHari(x.tanggal).split(',')[0], Tanggal: x.tanggal, 'Waktu Diajukan': String(x.tglAjukan ?? '').slice(0, 16), Keterangan: x.alasan, Status: teksStatus(x.status), 'Diputus Oleh': x.approver,
     'Catatan Atasan': x.catatanHr })), 'Izin', 'izin-wfh-dinas-' + todayStr())).catch(galat);
   return (
     <div className="card"><Kepala ikon="file-heart" judul="Izin, Sakit, WFH & Dinas" opsi={['Menunggu HR', 'Disetujui', 'Ditolak HR', 'ALL']} filter={filter} setFilter={setFilter} ekspor={ekspor} />
@@ -135,7 +136,8 @@ function DaftarIzin() {
       {!list ? <div className="skel" style={{ height: 90, marginTop: 12 }} /> : list.length ? <>{list.map((x) => (
         <div key={x.id} className="item">
           <div className="top"><div><div className="nm">{x.nama} <span className="tiny muted">({x.nik})</span></div>
-            <div className="dt"><b>{x.jenisLabel}{x.sesi && ` (${x.sesi})`}</b> · {tglPendek(x.tanggal)}{x.cabang && ' · ' + x.cabang}</div></div><Status st={x.status} /></div>
+            <div className="dt"><b>{x.jenisLabel}{x.sesi && ` (${x.sesi})`}</b> · {tglHari(x.tanggal)}{x.cabang && ' · ' + x.cabang}</div></div><Status st={x.status} /></div>
+          <div className="kv"><span>Diajukan</span><span style={{ textAlign: 'right' }}>{waktuAjukan(x.tglAjukan)}</span></div>
           {x.alasan && <div className="kv"><span>Keterangan</span><span style={{ textAlign: 'right' }}>{x.alasan}</span></div>}
           <TautanBukti link={x.buktiLink} />
           {x.catatanHr && <div className="kv"><span>Catatan atasan</span><span style={{ textAlign: 'right' }}>{x.catatanHr}</span></div>}

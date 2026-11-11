@@ -16,6 +16,10 @@ export function tglPendek(s?: string | null) {
   const d = keDate(s);
   return d.getDate() + ' ' + NAMA_BULAN[d.getMonth()].slice(0, 3) + ' ' + d.getFullYear();
 }
+/** "Senin, 9 Nov 2026" */
+export function tglHari(s?: string | null) { return s ? NAMA_HARI[keDate(s).getDay()] + ', ' + tglPendek(s) : '-'; }
+/** Waktu pengajuan dibuat (created_at, sudah WIB): "Senin, 9 Nov 2026 · 16:20 WIB" */
+export function waktuAjukan(s?: string | null) { if (!s) return '-'; const j = String(s).slice(11, 16); return tglHari(s) + (j ? ' · ' + j + ' WIB' : ''); }
 export function rentangTgl(a: string, b?: string | null) { return !b || a === b ? tglPendek(a) : tglPendek(a) + ' – ' + tglPendek(b); }
 export function geserTgl(t: string, n: number) { const d = keDate(t); d.setDate(d.getDate() + n); return todayStr(d); }
 export function rupiah(n: number) { n = Math.round(+n || 0); return (n < 0 ? '-' : '') + 'Rp' + Math.abs(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }

@@ -8,7 +8,7 @@ import { TautanBukti } from '@/components/BuktiPengajuan';
 import { NavigasiHalaman, type HalamanData } from '@/components/NavigasiHalaman';
 import { api } from '@/lib/klien/api';
 import { keExcel } from '@/lib/klien/excel';
-import { tglPendek, todayStr } from '@/lib/klien/format';
+import { tglHari, tglPendek, todayStr, waktuAjukan } from '@/lib/klien/format';
 
 type Data = Record<string, any>;
 const WARNA: Record<string, string> = { Disetujui: 'b-green', Ditolak: 'b-red', Dibatalkan: 'b-gray', Menunggu: 'b-amber' };
@@ -31,7 +31,7 @@ export default function CutiHC() {
   };
   const ekspor = () => api<Data[]>('adm_cuti', { status: 'ALL', all: true, search }).then((l) => keExcel(l.map((c) => ({ NIK: c.nik, Nama: c.nama, Divisi: c.dept, Jenis: c.jenis,
     Mulai: c.mulai, Selesai: c.selesai, 'Jumlah Hari': c.hari, Alasan: c.alasan, Status: c.status, 'Diputus Oleh': c.approver, Catatan: c.catatan || '',
-    'Tanggal Ajukan': String(c.tglAjukan).slice(0, 10) })), 'Cuti', 'pengajuan-cuti-' + todayStr())).catch(galat);
+    'Waktu Diajukan': String(c.tglAjukan).slice(0, 16) })), 'Cuti', 'pengajuan-cuti-' + todayStr())).catch(galat);
   return (
     <div className="card sempit">
       <div className="page-head" style={{ margin: 0 }}><h3 style={{ margin: 0 }}><Ikon n="plane" />Pengajuan Cuti</h3>
@@ -44,13 +44,13 @@ export default function CutiHC() {
       {!list ? <div className="skel" style={{ height: 90, marginTop: 12 }} /> : list.items.length ? <>{list.items.map((c) => (
         <div key={c.id} className="item">
           <div className="top"><div><div className="nm">{c.nama} <span className="tiny muted">({c.nik}{c.role === 'admin' && ' · HC'})</span></div>
-            <div className="dt">{c.jenis} · {tglPendek(c.mulai)} – {tglPendek(c.selesai)} · <b>{c.hari} hari</b></div></div>
+            <div className="dt">{c.jenis} · {tglHari(c.mulai)} – {tglHari(c.selesai)} · <b>{c.hari} hari</b></div></div>
             <span className={'badge ' + (WARNA[c.status] ?? 'b-gray')}>{c.status}</span></div>
           <div className="sep" style={{ margin: '8px 0' }} />
           <div className="kv"><span>Alasan</span><span style={{ textAlign: 'right' }}>{c.alasan || '-'}</span></div>
           <TautanBukti link={c.buktiLink} />
           {c.sisaPemohon != null && <div className="kv"><span>Sisa cuti tahunan</span><span><b>{c.sisaPemohon} hari</b></span></div>}
-          <div className="kv"><span>Diajukan</span><span>{tglPendek(c.tglAjukan)}</span></div>
+          <div className="kv"><span>Diajukan</span><span style={{ textAlign: 'right' }}>{waktuAjukan(c.tglAjukan)}</span></div>
           {c.approver && <div className="kv"><span>Diputus oleh</span><span>{c.approver}</span></div>}
           {c.catatan && <div className="kv"><span>Catatan</span><span style={{ textAlign: 'right' }}>{c.catatan}</span></div>}
           {c.dibuatOleh && <div className="kv"><span>Dibuat oleh</span><span><span className="badge b-purple">{c.dibuatOleh}</span></span></div>}

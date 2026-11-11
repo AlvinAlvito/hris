@@ -7,7 +7,7 @@ import { FormCuti, FormIzin, FormKoreksiAbsen, FormLembur } from '@/components/F
 import { TautanBukti } from '@/components/BuktiPengajuan';
 import { NavigasiHalaman, type HalamanData } from '@/components/NavigasiHalaman';
 import { api } from '@/lib/klien/api';
-import { teksStatus } from '@/lib/klien/format';
+import { teksStatus, waktuAjukan } from '@/lib/klien/format';
 
 type Data = Record<string, any>;
 interface Item { ikon: string; judul: string; waktu: string; status: string; ket: string; catatan: string; diajukan: string; buktiLink?: string; batal: () => Promise<unknown> }
@@ -101,6 +101,7 @@ export default function Pengajuan() {
                   <div style={{ minWidth: 0 }}><div className="nm">{x.judul}</div><div className="dt">{x.waktu}</div></div></div>
                 <span className={'badge ' + WARNA[g]}>{g === 'menunggu' ? teksStatus(x.status).replace('Menunggu HC', 'Menunggu') : teksStatus(x.status)}</span>
               </div>
+              <div className="tiny muted" style={{ marginTop: 6 }}>Diajukan {waktuAjukan(x.diajukan)}</div>
               {x.ket && <div className="tiny muted" style={{ marginTop: 6 }}>{x.ket}</div>}
               <TautanBukti link={x.buktiLink} />
               {x.catatan && <div className="kv" style={{ marginTop: 4 }}><span>Catatan atasan</span><span style={{ textAlign: 'right' }}>{x.catatan}</span></div>}
