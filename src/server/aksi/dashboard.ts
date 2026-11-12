@@ -24,24 +24,41 @@ async function cutiKetPada(t: string) {
   return { ket, cuti };
 }
 
+/* status yang termasuk tiap kartu dashboard yang bisa dilihat per tanggal (sama dengan kartu hari ini) */
+const KARTU_TANGGAL: Record<string, string[]> = { cuti: ['cuti', 'ket'], hadir: ['hadir', 'telat', 'setengah'], telat: ['telat'] };
+
+/* Kartu Cuti / izin, Hadir, atau Terlambat untuk tanggal pilihan. Sampai hari ini memakai status harian yang sama
+   dengan kartu (yang tetap absen masuk dihitung hadir). Tanggal mendatang hanya untuk Cuti / izin: cuti & izin yang sudah disetujui. */
+async function rincianTanggal(t: string, kartu: string) {
+  const status = KARTU_TANGGAL[kartu];
+  if (!status) gagal('Kartu tidak dikenal.');
+  const hariIni = tglWIB();
+  if (!POLA_TGL.test(t) || t < '2020-01-01' || t > tambahHari(hariIni, 366)) gagal('Tanggal tidak valid.');
+  if (kartu !== 'cuti' && t > hariIni) gagal('Tanggal tersebut belum terjadi, belum ada data absensi.');
+  const users = await q(SQL_USERS);
+  const { ket, cuti } = await cutiKetPada(t);
+  const peta = t <= hariIni ? await statusHarian(users, t, t) : null;
+  const abs = kartu === 'cuti' ? new Map<number, Baris>()
+    : new Map((await q('SELECT user_id, in_time, out_time, menit_telat, kerja_dari FROM absensi WHERE tanggal=? AND in_time IS NOT NULL', [t])).map((r) => [r.user_id as number, r]));
+  const orang = [];
+  for (const x of users) {
+    let st = peta?.[x.id]?.[t] ?? 'luar';
+    if (!peta && (!x.tgl_keluar || t <= x.tgl_keluar)) st = cuti.has(x.id) ? 'cuti' : ket.has(x.id) ? 'ket' : st;
+    if (!status.includes(st)) continue;
+    orang.push(barisOrang(x, st, abs.get(x.id), st === 'cuti' ? cuti.get(x.id) ?? 'Cuti' : st === 'ket' ? ket.get(x.id) ?? 'Izin' : ''));
+  }
+  return { tanggal: t, kartu, mendatang: !peta, orang: orang.sort((a, b) => String(a.nama).localeCompare(String(b.nama), 'id')) };
+}
+
 export const aksiDashboard: KumpulanAksi = {
-  /* Kartu "Cuti / izin" untuk tanggal pilihan. Sampai hari ini memakai status harian yang sama dengan kartu
-     (yang tetap absen masuk dihitung hadir); tanggal mendatang memakai cuti & izin yang sudah disetujui. */
+  async dash_rincian(m) {
+    await need(['admin', 'finance']);
+    return rincianTanggal(s(m, 'tanggal'), s(m, 'kartu'));
+  },
+  /* nama lama (rilis f4370fa), tetap ada agar tab yang masih terbuka tidak error */
   async dash_cuti_izin(m) {
     await need(['admin', 'finance']);
-    const t = s(m, 'tanggal');
-    if (!POLA_TGL.test(t) || t < '2020-01-01' || t > tambahHari(tglWIB(), 366)) gagal('Tanggal tidak valid.');
-    const users = await q(SQL_USERS);
-    const { ket, cuti } = await cutiKetPada(t);
-    const hariIni = tglWIB(), peta = t <= hariIni ? await statusHarian(users, t, t) : null;
-    const orang = [];
-    for (const x of users) {
-      let st = peta?.[x.id]?.[t] ?? 'luar';
-      if (!peta && (!x.tgl_keluar || t <= x.tgl_keluar)) st = cuti.has(x.id) ? 'cuti' : ket.has(x.id) ? 'ket' : st;
-      if (st !== 'cuti' && st !== 'ket') continue;
-      orang.push(barisOrang(x, st, undefined, st === 'cuti' ? cuti.get(x.id) ?? 'Cuti' : ket.get(x.id) ?? 'Izin'));
-    }
-    return { tanggal: t, mendatang: !peta, orang: orang.sort((a, b) => String(a.nama).localeCompare(String(b.nama), 'id')) };
+    return rincianTanggal(s(m, 'tanggal'), 'cuti');
   },
   async dash_grafik(m) {
     await need(['admin', 'finance']);

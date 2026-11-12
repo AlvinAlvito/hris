@@ -40,7 +40,7 @@ export default function Dashboard() {
     ['hourglass', 'Belum absen', h.belum, 'c-red', ['belum']], ['inbox', 'Menunggu persetujuan', inbox.total, 'c-gray', 'persetujuan']] : [];
   const rincian = (judul: string, status: string[] | null) =>
     bukaSheet(<RincianKartu judul={judul} tanggal={g!.tanggal[g!.tanggal.length - 1]} daftar={(g!.orang as Data[]).filter((x) => !status || status.includes(x.status))} semua={!status}
-      pilihTanggal={judul === 'Cuti / izin'} />, { besar: true });
+      kartuTanggal={KARTU_TANGGAL[judul]} />, { besar: true });
   const fotoBesar = (src: string, nama: string) => bukaSheet(<><h3>{nama}</h3><img src={src} alt="" style={{ width: '100%', borderRadius: 14 }} /></>);
 
   return (<>
@@ -103,19 +103,24 @@ export default function Dashboard() {
   </>);
 }
 
+/* kartu yang bisa dilihat per tanggal -> kunci kartu di server (dash_rincian) */
+const KARTU_TANGGAL: Record<string, string> = { 'Cuti / izin': 'cuti', 'Hadir hari ini': 'hadir', Terlambat: 'telat' };
+const KOSONG_TANGGAL: Record<string, string> = { cuti: 'Tidak ada karyawan cuti atau izin pada tanggal ini.', hadir: 'Tidak ada karyawan yang hadir pada tanggal ini.', telat: 'Tidak ada karyawan yang terlambat pada tanggal ini.' };
 const TOMBOL_TGL = { flex: '0 0 auto', width: 'auto', minWidth: 40, marginTop: 0, alignSelf: 'stretch' } as const;
 /* daftar karyawan di balik satu kartu, dengan pencarian & ekspor Excel */
-function RincianKartu({ judul, tanggal: tglAwal, daftar: daftarAwal, semua, pilihTanggal }: { judul: string; tanggal: string; daftar: Data[]; semua: boolean; pilihTanggal?: boolean }) {
+function RincianKartu({ judul, tanggal: tglAwal, daftar: daftarAwal, semua, kartuTanggal }: { judul: string; tanggal: string; daftar: Data[]; semua: boolean; kartuTanggal?: string }) {
+  const pilihTanggal = !!kartuTanggal, bolehMendatang = kartuTanggal === 'cuti';
   const { tutupSheet, galat } = useAplikasi();
   const [cari, setCari] = useState(''), [hp, setHp] = useState(false);
-  // kartu Cuti / izin bisa dilihat untuk tanggal lain; tanggal awal = hari ini (data dari kartu)
+  // kartu Cuti / izin, Hadir, Terlambat bisa dilihat untuk tanggal lain; tanggal awal = hari ini (data dari kartu)
   const [tanggal, setTanggal] = useState(tglAwal), [daftar, setDaftar] = useState(daftarAwal), [memuat, setMemuat] = useState(false), [mendatang, setMendatang] = useState(false);
   const ubahTanggal = (t: string) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return;
+    if (!bolehMendatang && t > tglAwal) t = tglAwal;   // hadir & terlambat belum ada datanya untuk hari mendatang
     setTanggal(t); setCari('');
     if (t === tglAwal) { setDaftar(daftarAwal); setMendatang(false); return; }
     setMemuat(true);
-    api<Data>('dash_cuti_izin', { tanggal: t }).then((r) => { if (r.tanggal === t) { setDaftar(r.orang); setMendatang(r.mendatang); } }).catch(galat).finally(() => setMemuat(false));
+    api<Data>('dash_rincian', { tanggal: t, kartu: kartuTanggal }).then((r) => { if (r.tanggal === t) { setDaftar(r.orang); setMendatang(r.mendatang); } }).catch(galat).finally(() => setMemuat(false));
   };
   useEffect(() => { const mq = matchMedia('(max-width: 640px)'); const ubah = () => setHp(mq.matches); ubah(); mq.addEventListener('change', ubah); return () => mq.removeEventListener('change', ubah); }, []);
   const kata = cari.trim().toLowerCase();
@@ -125,28 +130,28 @@ function RincianKartu({ judul, tanggal: tglAwal, daftar: daftarAwal, semua, pili
     Masuk: x.masuk, Pulang: x.pulang, 'Telat (menit)': x.telat || '', Keterangan: x.keterangan || x.dari, ...(semua ? { 'Status Kerja': x.statusKerja, 'Tanggal Masuk': x.tglMasuk } : {}) })),
   judul.slice(0, 30), `${judul.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${pilihTanggal ? tanggal : todayStr()}`).catch(galat);
   return (<>
-    <div className="page-head" style={{ margin: 0 }}><div><h3 style={{ margin: 0 }}>{judul} <span className="m">{daftar.length} orang</span></h3>
+    <div className="page-head" style={{ margin: 0 }}><div><h3 style={{ margin: 0 }}>{tanggal !== tglAwal ? judul.replace(/ hari ini$/, "") : judul} <span className="m">{daftar.length} orang</span></h3>
       <div className="tiny muted">{tglIndo(tanggal)}</div></div>
       {daftar.length > 0 && <button className="btn ghost sm auto" onClick={ekspor}><Ikon n="download" />Excel</button>}</div>
     {pilihTanggal && <div style={{ display: 'flex', marginTop: 10, alignItems: 'stretch', gap: 6 }}>
       <button className="btn ghost sm" style={TOMBOL_TGL} aria-label="Hari sebelumnya" onClick={() => ubahTanggal(geserTgl(tanggal, -1))}><Ikon n="chevron-left" /></button>
-      <input type="date" value={tanggal} onChange={(e) => ubahTanggal(e.target.value)} style={{ flex: 1, minWidth: 0, margin: 0 }} aria-label="Pilih tanggal" />
-      <button className="btn ghost sm" style={TOMBOL_TGL} aria-label="Hari berikutnya" onClick={() => ubahTanggal(geserTgl(tanggal, 1))}><Ikon n="chevron-right" /></button>
+      <input type="date" value={tanggal} max={bolehMendatang ? undefined : tglAwal} onChange={(e) => ubahTanggal(e.target.value)} style={{ flex: 1, minWidth: 0, margin: 0 }} aria-label="Pilih tanggal" />
+      <button className="btn ghost sm" style={TOMBOL_TGL} aria-label="Hari berikutnya" disabled={!bolehMendatang && tanggal >= tglAwal} onClick={() => ubahTanggal(geserTgl(tanggal, 1))}><Ikon n="chevron-right" /></button>
       {tanggal !== tglAwal && <button className="btn ghost sm" style={{ ...TOMBOL_TGL, padding: '0 12px' }} onClick={() => ubahTanggal(tglAwal)}>Hari ini</button>}
     </div>}
     {pilihTanggal && mendatang && <div className="note" style={{ marginTop: 8 }}>Tanggal mendatang: daftar berisi cuti dan izin yang sudah disetujui.</div>}
     {memuat && <div className="skel" style={{ height: 60, marginTop: 12 }} />}
     {daftar.length > 6 && <input style={{ marginTop: 10 }} placeholder="Cari nama, NIK, divisi" value={cari} onChange={(e) => setCari(e.target.value)} />}
-    {memuat ? null : !daftar.length ? <div className="empty"><Ikon n="inbox" />{pilihTanggal ? 'Tidak ada karyawan cuti atau izin pada tanggal ini.' : 'Tidak ada karyawan pada kartu ini.'}</div> : hp ? tampil.map((x) => (
+    {memuat ? null : !daftar.length ? <div className="empty"><Ikon n="inbox" />{kartuTanggal ? KOSONG_TANGGAL[kartuTanggal] : 'Tidak ada karyawan pada kartu ini.'}</div> : hp ? tampil.map((x) => (
       <div key={x.id} className="item"><div className="top"><div className="orang"><Avatar u={x} ukuran={30} /><div><div className="nm">{x.nama}</div>
         <div className="dt">{x.divisi || '—'}{x.masuk && ` · masuk ${x.masuk}`}{x.pulang && ` · pulang ${x.pulang}`}{(x.keterangan || x.dari) && ` · ${x.keterangan || x.dari}`}</div></div></div>
-        <span className={'badge ' + warna(x.status)}>{x.statusLabel}{x.telat ? ` ${x.telat}m` : ''}</span></div></div>)) : (
+        <span className={'badge ' + warna(x.status)}>{x.statusLabel}{x.status === 'telat' ? ` ${x.telat || '<1'}m` : ''}</span></div></div>)) : (
       <div className="tblwrap"><table><thead><tr><th>Karyawan</th><th>Divisi</th><th>Status</th><th>Masuk</th><th>Pulang</th><th>Keterangan</th></tr></thead><tbody>
         {tampil.map((x) => <tr key={x.id}>
           <td><div className="orang"><Avatar u={x} ukuran={30} /><div><b>{x.nama}</b><div className="tiny muted">{x.nik}{x.jabatan && ' · ' + x.jabatan}</div></div></div></td>
           <td>{x.divisi || '—'}</td>
           <td><span className={'badge ' + warna(x.status)}>
-            {x.statusLabel}{x.telat ? ` ${x.telat}m` : ''}</span></td>
+            {x.statusLabel}{x.status === 'telat' ? ` ${x.telat || '<1'}m` : ''}</span></td>
           <td className="num">{x.masuk || '—'}</td><td className="num">{x.pulang || '—'}</td>
           <td>{x.keterangan || x.dari || (semua ? x.lokasi : '') || '—'}</td></tr>)}
       </tbody></table></div>)}
