@@ -8,7 +8,7 @@ import { adaWebGL, Grafik, palet } from '@/components/Grafik';
 import { Ikon } from '@/components/Ikon';
 import { api } from '@/lib/klien/api';
 import { keExcel } from '@/lib/klien/excel';
-import { jamKerjaTeks, labelRole, NAMA_BULAN, periodeTeks, rupiah, tglIndo, tglPendek, todayStr } from '@/lib/klien/format';
+import { geserTgl, jamKerjaTeks, labelRole, NAMA_BULAN, periodeTeks, rupiah, tglIndo, tglPendek, todayStr } from '@/lib/klien/format';
 
 type Data = Record<string, any>;
 
@@ -39,7 +39,8 @@ export default function Dashboard() {
     ['clock-alert', 'Terlambat', h.telat, 'c-amber', ['telat']], ['plane', 'Cuti / izin', h.cuti + h.ket, 'c-cyan', ['cuti', 'ket']],
     ['hourglass', 'Belum absen', h.belum, 'c-red', ['belum']], ['inbox', 'Menunggu persetujuan', inbox.total, 'c-gray', 'persetujuan']] : [];
   const rincian = (judul: string, status: string[] | null) =>
-    bukaSheet(<RincianKartu judul={judul} tanggal={g!.tanggal[g!.tanggal.length - 1]} daftar={(g!.orang as Data[]).filter((x) => !status || status.includes(x.status))} semua={!status} />, { besar: true });
+    bukaSheet(<RincianKartu judul={judul} tanggal={g!.tanggal[g!.tanggal.length - 1]} daftar={(g!.orang as Data[]).filter((x) => !status || status.includes(x.status))} semua={!status}
+      pilihTanggal={judul === 'Cuti / izin'} />, { besar: true });
   const fotoBesar = (src: string, nama: string) => bukaSheet(<><h3>{nama}</h3><img src={src} alt="" style={{ width: '100%', borderRadius: 14 }} /></>);
 
   return (<>
@@ -102,23 +103,41 @@ export default function Dashboard() {
   </>);
 }
 
+const TOMBOL_TGL = { flex: '0 0 auto', width: 'auto', minWidth: 40, marginTop: 0, alignSelf: 'stretch' } as const;
 /* daftar karyawan di balik satu kartu, dengan pencarian & ekspor Excel */
-function RincianKartu({ judul, tanggal, daftar, semua }: { judul: string; tanggal: string; daftar: Data[]; semua: boolean }) {
+function RincianKartu({ judul, tanggal: tglAwal, daftar: daftarAwal, semua, pilihTanggal }: { judul: string; tanggal: string; daftar: Data[]; semua: boolean; pilihTanggal?: boolean }) {
   const { tutupSheet, galat } = useAplikasi();
   const [cari, setCari] = useState(''), [hp, setHp] = useState(false);
+  // kartu Cuti / izin bisa dilihat untuk tanggal lain; tanggal awal = hari ini (data dari kartu)
+  const [tanggal, setTanggal] = useState(tglAwal), [daftar, setDaftar] = useState(daftarAwal), [memuat, setMemuat] = useState(false), [mendatang, setMendatang] = useState(false);
+  const ubahTanggal = (t: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return;
+    setTanggal(t); setCari('');
+    if (t === tglAwal) { setDaftar(daftarAwal); setMendatang(false); return; }
+    setMemuat(true);
+    api<Data>('dash_cuti_izin', { tanggal: t }).then((r) => { if (r.tanggal === t) { setDaftar(r.orang); setMendatang(r.mendatang); } }).catch(galat).finally(() => setMemuat(false));
+  };
   useEffect(() => { const mq = matchMedia('(max-width: 640px)'); const ubah = () => setHp(mq.matches); ubah(); mq.addEventListener('change', ubah); return () => mq.removeEventListener('change', ubah); }, []);
   const kata = cari.trim().toLowerCase();
   const warna = (st: string) => ({ hadir: 'b-green', setengah: 'b-green', telat: 'b-amber', cuti: 'b-blue', ket: 'b-blue', belum: 'b-red' } as Record<string, string>)[st] || 'b-gray';
   const tampil = kata ? daftar.filter((x) => `${x.nama} ${x.nik} ${x.divisi} ${x.jabatan} ${x.lokasi}`.toLowerCase().includes(kata)) : daftar;
-  const ekspor = () => keExcel(daftar.map((x) => ({ NIK: x.nik, Nama: x.nama, Divisi: x.divisi, Jabatan: x.jabatan, Lokasi: x.lokasi, 'Status Hari Ini': x.statusLabel,
+  const ekspor = () => keExcel(daftar.map((x) => ({ NIK: x.nik, Nama: x.nama, Divisi: x.divisi, Jabatan: x.jabatan, Lokasi: x.lokasi, Tanggal: tanggal, Status: x.statusLabel,
     Masuk: x.masuk, Pulang: x.pulang, 'Telat (menit)': x.telat || '', Keterangan: x.keterangan || x.dari, ...(semua ? { 'Status Kerja': x.statusKerja, 'Tanggal Masuk': x.tglMasuk } : {}) })),
-  judul.slice(0, 30), `${judul.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${todayStr()}`).catch(galat);
+  judul.slice(0, 30), `${judul.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${pilihTanggal ? tanggal : todayStr()}`).catch(galat);
   return (<>
     <div className="page-head" style={{ margin: 0 }}><div><h3 style={{ margin: 0 }}>{judul} <span className="m">{daftar.length} orang</span></h3>
       <div className="tiny muted">{tglIndo(tanggal)}</div></div>
       {daftar.length > 0 && <button className="btn ghost sm auto" onClick={ekspor}><Ikon n="download" />Excel</button>}</div>
+    {pilihTanggal && <div style={{ display: 'flex', marginTop: 10, alignItems: 'stretch', gap: 6 }}>
+      <button className="btn ghost sm" style={TOMBOL_TGL} aria-label="Hari sebelumnya" onClick={() => ubahTanggal(geserTgl(tanggal, -1))}><Ikon n="chevron-left" /></button>
+      <input type="date" value={tanggal} onChange={(e) => ubahTanggal(e.target.value)} style={{ flex: 1, minWidth: 0, margin: 0 }} aria-label="Pilih tanggal" />
+      <button className="btn ghost sm" style={TOMBOL_TGL} aria-label="Hari berikutnya" onClick={() => ubahTanggal(geserTgl(tanggal, 1))}><Ikon n="chevron-right" /></button>
+      {tanggal !== tglAwal && <button className="btn ghost sm" style={{ ...TOMBOL_TGL, padding: '0 12px' }} onClick={() => ubahTanggal(tglAwal)}>Hari ini</button>}
+    </div>}
+    {pilihTanggal && mendatang && <div className="note" style={{ marginTop: 8 }}>Tanggal mendatang: daftar berisi cuti dan izin yang sudah disetujui.</div>}
+    {memuat && <div className="skel" style={{ height: 60, marginTop: 12 }} />}
     {daftar.length > 6 && <input style={{ marginTop: 10 }} placeholder="Cari nama, NIK, divisi" value={cari} onChange={(e) => setCari(e.target.value)} />}
-    {!daftar.length ? <div className="empty"><Ikon n="inbox" />Tidak ada karyawan pada kartu ini.</div> : hp ? tampil.map((x) => (
+    {memuat ? null : !daftar.length ? <div className="empty"><Ikon n="inbox" />{pilihTanggal ? 'Tidak ada karyawan cuti atau izin pada tanggal ini.' : 'Tidak ada karyawan pada kartu ini.'}</div> : hp ? tampil.map((x) => (
       <div key={x.id} className="item"><div className="top"><div className="orang"><Avatar u={x} ukuran={30} /><div><div className="nm">{x.nama}</div>
         <div className="dt">{x.divisi || '—'}{x.masuk && ` · masuk ${x.masuk}`}{x.pulang && ` · pulang ${x.pulang}`}{(x.keterangan || x.dari) && ` · ${x.keterangan || x.dari}`}</div></div></div>
         <span className={'badge ' + warna(x.status)}>{x.statusLabel}{x.telat ? ` ${x.telat}m` : ''}</span></div></div>)) : (

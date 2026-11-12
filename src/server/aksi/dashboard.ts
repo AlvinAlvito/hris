@@ -1,17 +1,53 @@
 /* Data grafik dashboard & ringkasan */
 import { q, type Baris } from '@/lib/db';
-import { i } from '@/lib/http';
+import { gagal, i, s } from '@/lib/http';
 import { labelKet, need } from '@/lib/aturan';
 import { statusHarian } from '@/lib/statusHarian';
-import { tambahHari, tglWIB } from '@/lib/waktu';
+import { POLA_TGL, tambahHari, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
 
+const LABEL: Record<string, string> = { hadir: 'Tepat waktu', telat: 'Terlambat', setengah: 'Setengah hari', cuti: 'Cuti', ket: 'Izin', libur: 'Libur', belum: 'Belum absen', luar: 'Belum / sudah tidak bekerja', mangkir: 'Tidak hadir' };
+const SQL_USERS = `SELECT u.*, c.nama cnama FROM users u LEFT JOIN cabang c ON c.id=u.cabang_id WHERE u.aktif=1 AND u.role<>'direktur'`;
+
+/* satu baris daftar orang di balik kartu dashboard */
+function barisOrang(x: Baris, st: string, a: Baris | undefined, keterangan: string) {
+  return { id: x.id, nik: x.nik, nama: x.nama, divisi: x.dept, jabatan: x.jabatan, lokasi: x.cnama || '', statusKerja: x.status_kerja, tglMasuk: x.tgl_masuk,
+    foto: x.foto_profil ? '/uploads/avatar/' + x.foto_profil : '', status: st, statusLabel: LABEL[st] ?? st,
+    masuk: a?.in_time ? String(a.in_time).slice(0, 5) : '', pulang: a?.out_time ? String(a.out_time).slice(0, 5) : '',
+    telat: st === 'telat' ? Number(a?.menit_telat ?? 0) : 0, dari: a?.kerja_dari === 'wfh' ? 'WFH' : a?.kerja_dari === 'dlk' ? 'Dinas' : '', keterangan };
+}
+/* cuti & izin yang disetujui pada satu tanggal: user_id -> keterangan */
+async function cutiKetPada(t: string) {
+  const ket = new Map((await q("SELECT user_id, jenis, sesi FROM ketidakhadiran WHERE tanggal=? AND status='Disetujui'", [t]))
+    .map((r) => [r.user_id as number, labelKet(r.jenis) + (r.sesi ? ` (${r.sesi})` : '')]));
+  const cuti = new Map((await q("SELECT user_id, jenis FROM cuti WHERE status='Disetujui' AND mulai<=? AND selesai>=?", [t, t])).map((r) => [r.user_id as number, r.jenis as string]));
+  return { ket, cuti };
+}
+
 export const aksiDashboard: KumpulanAksi = {
+  /* Kartu "Cuti / izin" untuk tanggal pilihan. Sampai hari ini memakai status harian yang sama dengan kartu
+     (yang tetap absen masuk dihitung hadir); tanggal mendatang memakai cuti & izin yang sudah disetujui. */
+  async dash_cuti_izin(m) {
+    await need(['admin', 'finance']);
+    const t = s(m, 'tanggal');
+    if (!POLA_TGL.test(t) || t < '2020-01-01' || t > tambahHari(tglWIB(), 366)) gagal('Tanggal tidak valid.');
+    const users = await q(SQL_USERS);
+    const { ket, cuti } = await cutiKetPada(t);
+    const hariIni = tglWIB(), peta = t <= hariIni ? await statusHarian(users, t, t) : null;
+    const orang = [];
+    for (const x of users) {
+      let st = peta?.[x.id]?.[t] ?? 'luar';
+      if (!peta && (!x.tgl_keluar || t <= x.tgl_keluar)) st = cuti.has(x.id) ? 'cuti' : ket.has(x.id) ? 'ket' : st;
+      if (st !== 'cuti' && st !== 'ket') continue;
+      orang.push(barisOrang(x, st, undefined, st === 'cuti' ? cuti.get(x.id) ?? 'Cuti' : ket.get(x.id) ?? 'Izin'));
+    }
+    return { tanggal: t, mendatang: !peta, orang: orang.sort((a, b) => String(a.nama).localeCompare(String(b.nama), 'id')) };
+  },
   async dash_grafik(m) {
     await need(['admin', 'finance']);
     const hari = Math.max(7, Math.min(62, i(m, 'hari', 30)));
     const sampai = tglWIB(), dari = tambahHari(sampai, -(hari - 1));
-    const users = await q(`SELECT u.*, c.nama cnama FROM users u LEFT JOIN cabang c ON c.id=u.cabang_id WHERE u.aktif=1 AND u.role<>'direktur'`);
+    const users = await q(SQL_USERS);
     const peta = await statusHarian(users, dari, sampai);
 
     /* tren harian per status */
@@ -31,20 +67,13 @@ export const aksiDashboard: KumpulanAksi = {
     const hariIni: Record<string, number> = { hadir: 0, telat: 0, cuti: 0, ket: 0, libur: 0, belum: 0 };
     const lokasi = new Map<string, Baris>();
     const abs = new Map((await q('SELECT user_id, in_time, out_time, menit_telat, kerja_dari FROM absensi WHERE tanggal=? AND in_time IS NOT NULL', [sampai])).map((r) => [r.user_id as number, r]));
-    const ketHari = new Map((await q("SELECT user_id, jenis FROM ketidakhadiran WHERE tanggal=? AND status='Disetujui'", [sampai])).map((r) => [r.user_id as number, labelKet(r.jenis)]));
-    const cutiHari = new Map((await q("SELECT user_id, jenis FROM cuti WHERE status='Disetujui' AND mulai<=? AND selesai>=?", [sampai, sampai])).map((r) => [r.user_id as number, r.jenis as string]));
-    const LABEL: Record<string, string> = { hadir: 'Tepat waktu', telat: 'Terlambat', setengah: 'Setengah hari', cuti: 'Cuti', ket: 'Izin', libur: 'Libur', belum: 'Belum absen', luar: 'Belum / sudah tidak bekerja', mangkir: 'Tidak hadir' };
+    const { ket: ketHari, cuti: cutiHari } = await cutiKetPada(sampai);
     const orang: Baris[] = [];
     for (const x of users) {
       const st = peta[x.id]?.[sampai] ?? 'luar';
       if (st in hariIni) hariIni[st]++;
       else if (st === 'setengah') hariIni.hadir++;
-      const a = abs.get(x.id);
-      orang.push({ id: x.id, nik: x.nik, nama: x.nama, divisi: x.dept, jabatan: x.jabatan, lokasi: x.cnama || '', statusKerja: x.status_kerja, tglMasuk: x.tgl_masuk,
-        foto: x.foto_profil ? '/uploads/avatar/' + x.foto_profil : '', status: st, statusLabel: LABEL[st] ?? st,
-        masuk: a?.in_time ? String(a.in_time).slice(0, 5) : '', pulang: a?.out_time ? String(a.out_time).slice(0, 5) : '',
-        telat: st === 'telat' ? Number(a?.menit_telat ?? 0) : 0, dari: a?.kerja_dari === 'wfh' ? 'WFH' : a?.kerja_dari === 'dlk' ? 'Dinas' : '',
-        keterangan: st === 'cuti' ? cutiHari.get(x.id) ?? 'Cuti' : st === 'ket' ? ketHari.get(x.id) ?? 'Izin' : '' });
+      orang.push(barisOrang(x, st, abs.get(x.id), st === 'cuti' ? cutiHari.get(x.id) ?? 'Cuti' : st === 'ket' ? ketHari.get(x.id) ?? 'Izin' : ''));
       const l = x.cnama || 'Tanpa lokasi';
       if (!lokasi.has(l)) lokasi.set(l, { nama: l, total: 0, hadir: 0, libur: 0 });
       const o = lokasi.get(l)!;
