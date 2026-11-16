@@ -74,7 +74,9 @@ export const aksiPengajuan: KumpulanAksi = {
       gagal(jenis === 'dlk' ? 'Tuliskan kota tujuan dan keperluan dinas'
         : jenis === 'wfh' ? 'Tuliskan tugas / laporan pekerjaan selama WFH' : 'Keterangan wajib diisi');
     const hariIni = tglWIB();
-    if (tgl < tambahHari(hariIni, -30)) gagal('Pengajuan hanya bisa untuk 30 hari terakhir');
+    // dinas luar kota sering baru diajukan setelah pulang dari perjalanan (arahan HRD 17 Nov 2026): 90 hari ke belakang
+    if (jenis === 'dlk') { if (tgl < tambahHari(hariIni, -90)) gagal('Pengajuan dinas luar kota paling lambat 90 hari setelah tanggal dinas'); }
+    else if (tgl < tambahHari(hariIni, -30)) gagal('Pengajuan hanya bisa untuk 30 hari terakhir');
     if (sampai > tambahHari(hariIni, 60)) gagal('Pengajuan paling jauh 60 hari ke depan');
     if ((epoch(sampai) - epoch(tgl)) / 86400 > 30) gagal('Rentang paling panjang 31 hari');
 

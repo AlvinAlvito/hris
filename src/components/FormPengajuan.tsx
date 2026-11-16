@@ -59,6 +59,7 @@ export function FormIzin({ jenis, selesai }: { jenis: 'izin' | 'setengah_hari' |
           </div>
           <div className="tiny muted" style={{ marginTop: 6 }}>
             {jenis === 'izin' ? 'Tidak memotong jatah cuti. ' : 'Absen tetap dengan foto, tanpa batas lokasi kantor. '}Hari libur dalam rentang tidak dihitung.
+            {jenis === 'dlk' && ' Bisa diajukan sampai 90 hari setelah tanggal dinas.'}
           </div>
         </>
       )}
