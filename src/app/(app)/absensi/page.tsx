@@ -11,7 +11,7 @@ import { NavigasiHalaman, type HalamanData } from '@/components/NavigasiHalaman'
 import { api } from '@/lib/klien/api';
 import { keExcel } from '@/lib/klien/excel';
 import { unduhRekapTelat } from '@/lib/klien/excelTelat';
-import { jamKerjaTeks, km, labelRole, NAMA_BULAN, NAMA_HARI, pad, tglPendek, todayStr } from '@/lib/klien/format';
+import { geserTgl, jamKerjaTeks, km, labelRole, NAMA_BULAN, NAMA_HARI, pad, tglPendek, todayStr } from '@/lib/klien/format';
 
 type Data = Record<string, any>;
 
@@ -172,10 +172,12 @@ export default function Absensi() {
 
 function FormKoreksi({ a, selesai }: { a: Data; selesai: () => void }) {
   const { tutupSheet, toast, galat } = useAplikasi();
-  const [jIn, setIn] = useState(a.inTime || '08:00'), [jOut, setOut] = useState(a.outTime || ''), [tgl, setTgl] = useState(a.tglPulang || a.tanggal), [cat, setCat] = useState('');
+  // belum clock out: jam pulang langsung diisi jam pulang jadwal hari itu (shift lewat tengah malam -> tanggal berikutnya)
+  const isiJadwal = !a.outTime && !!a.jadwalOut, lewatMalam = isiJadwal && !!a.jadwalIn && a.jadwalOut < a.jadwalIn;
+  const [jIn, setIn] = useState(a.inTime || '08:00'), [jOut, setOut] = useState(a.outTime || (isiJadwal ? a.jadwalOut : ''));
+  const [tgl, setTgl] = useState(a.tglPulang || (lewatMalam ? geserTgl(a.tanggal, 1) : a.tanggal)), [cat, setCat] = useState('');
   const [kirim, setKirim] = useState(false);
   const simpan = async () => {
-    if (!cat.trim()) { toast('Catatan koreksi wajib diisi', true); return; }
     setKirim(true);
     try {
       const r = await api<{ pesan: string }>('adm_absen_koreksi', { id: a.id, jamMasuk: jIn, jamPulang: jOut, tglPulang: tgl, catatan: cat.trim() });
@@ -186,11 +188,11 @@ function FormKoreksi({ a, selesai }: { a: Data; selesai: () => void }) {
     <h3>Koreksi Absensi</h3>
     <div className="note"><b>{a.nama}</b> · {tglPendek(a.tanggal)}{a.shiftNama && ' · ' + a.shiftNama}{a.jadwalIn && <><br />Jadwal seharusnya {a.jadwalIn}–{a.jadwalOut || '?'}</>}</div>
     <div className="row"><div><label>Jam masuk</label><input type="time" value={jIn} onChange={(e) => setIn(e.target.value)} /></div>
-      <div><label>Jam pulang</label><input type="time" value={jOut} onChange={(e) => setOut(e.target.value)} /></div></div>
+      <div><label>Jam pulang{isiJadwal && jOut === a.jadwalOut && <span className="tiny"> (sesuai jadwal)</span>}</label><input type="time" value={jOut} onChange={(e) => setOut(e.target.value)} /></div></div>
     <label>Tanggal pulang <span className="tiny">(isi bila shift malam, pulang keesokan harinya)</span></label>
     <input type="date" value={tgl} onChange={(e) => setTgl(e.target.value)} />
-    <label>Catatan koreksi <span className="tiny">(wajib)</span></label>
-    <textarea value={cat} onChange={(e) => setCat(e.target.value)} placeholder="mis. lupa clock out, dikonfirmasi atasan pulang 17:10" />
+    <label>Catatan koreksi <span className="tiny">(opsional)</span></label>
+    <textarea value={cat} onChange={(e) => setCat(e.target.value)} placeholder="Boleh dikosongkan. Mis. dikonfirmasi atasan pulang 17:10" />
     <div className="note">Koreksi tercatat atas nama Anda beserta waktunya, dan terlihat di rekap serta Excel. Kosongkan jam pulang bila memang belum diketahui.</div>
     <button className="btn" disabled={kirim} onClick={simpan}>Simpan Koreksi</button>
     <button className="btn ghost" onClick={tutupSheet}>Batal</button>

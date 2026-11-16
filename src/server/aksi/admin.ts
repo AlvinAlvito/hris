@@ -274,11 +274,13 @@ export const aksiAdmin: KumpulanAksi = {
     const id = i(m, 'id');
     const a = await q1(`SELECT a.*, u.nama, u.nik, u.jam_mode ujm, u.inti_mulai, u.inti_selesai FROM absensi a JOIN users u ON u.id=a.user_id WHERE a.id=?`, [id]);
     if (!a) gagal('Data absensi tidak ditemukan');
-    const catatan = teksPanjang(m, 'catatan', 'Catatan koreksi');
-    if (!catatan) gagal('Catatan koreksi wajib diisi — ini yang dilihat auditor nanti');
     const jamIn = s(m, 'jamMasuk'), jamOut = s(m, 'jamPulang');
     if (!POLA_JAM.test(jamIn)) gagal('Jam masuk tidak sah');
     if (jamOut !== '' && !POLA_JAM.test(jamOut)) gagal('Jam pulang tidak sah');
+    // catatan boleh kosong (arahan HRD 16 Nov 2026); jejak audit tetap terisi keterangan otomatis
+    const jadwalOut = a.jadwal_out ? String(a.jadwal_out).slice(0, 5) : '';
+    const catatan = teksPanjang(m, 'catatan', 'Catatan koreksi')
+      || (!a.out_time && jamOut ? `Lupa clock out, jam pulang diisi ${jamOut === jadwalOut ? 'sesuai jadwal ' : ''}${jamOut}` : 'Dikoreksi HC tanpa catatan');
     const h = await hitungAbsensi(a, { jam_mode: a.ujm, inti_mulai: a.inti_mulai, inti_selesai: a.inti_selesai }, jamIn, jamOut, s(m, 'tglPulang'));
     const sebelum = String(a.in_time).slice(0, 5) + '→' + (a.out_time ? String(a.out_time).slice(0, 5) : 'kosong');
     const sesudah = jamIn + '→' + (jamOut || 'kosong');
