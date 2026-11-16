@@ -11,6 +11,7 @@ import { NavigasiHalaman, type HalamanData } from '@/components/NavigasiHalaman'
 import { api } from '@/lib/klien/api';
 import { keExcel } from '@/lib/klien/excel';
 import { unduhRekapTelat } from '@/lib/klien/excelTelat';
+import { unduhRekapDlk, unduhRekapHadir, unduhRekapLembur } from '@/lib/klien/excelFinance';
 import { geserTgl, jamKerjaTeks, km, labelRole, NAMA_BULAN, NAMA_HARI, pad, tglPendek, todayStr } from '@/lib/klien/format';
 
 type Data = Record<string, any>;
@@ -82,7 +83,17 @@ export default function Absensi() {
     Approval: a.approval, 'Approval Oleh': a.approvalOleh || '', 'Catatan Approval': a.approvalCatatan || '',
   })), 'Absensi', `absensi-${tgl}`)).catch(galat);
   const [th, bl] = tgl.split('-').map(Number);
-  const eksporTelat = () => api<Record<string, any>>('lap_telat_finance', { periode: `${th}-${pad(bl)}` }).then(unduhRekapTelat).catch(galat);
+  // rekap finance (periode 27 bulan lalu – 26 bulan ini): format mengikuti rekap manual HC
+  const [jenisFin, setJenisFin] = useState('telat'), [dasarLembur, setDasarLembur] = useState('disetujui'), [unduhFin, setUnduhFin] = useState(false);
+  const eksporFinance = () => {
+    const periode = `${th}-${pad(bl)}`;
+    const peta: Record<string, [string, (d: Record<string, any>) => Promise<void>, Record<string, string>]> = {
+      telat: ['lap_telat_finance', unduhRekapTelat, {}], lembur: ['lap_lembur_finance', unduhRekapLembur, { dasar: dasarLembur }],
+      dlk: ['lap_dlk_finance', unduhRekapDlk, {}], hadir: ['lap_hadir_finance', unduhRekapHadir, {}] };
+    const [aksi, buat, ext] = peta[jenisFin];
+    setUnduhFin(true);
+    api<Record<string, any>>(aksi, { periode, ...ext }).then(buat).catch(galat).finally(() => setUnduhFin(false));
+  };
   const eksporRekap = () => api<Data[]>('adm_rekap', { bulan: bl, tahun: th, cabangId: cab }).then((rows) => keExcel(rows.map((r) => ({
     NIK: r.nik, Nama: r.nama, 'Lokasi Kerja': r.cabang || '', Divisi: r.dept, Jabatan: r.jabatan, Peran: labelRole(r.peran), 'Pola Jam': r.polaJam,
     Hadir: r.hadir, Terlambat: r.telat, 'Total Menit Telat': r.menitTelat, 'Belum Clock Out': r.belumOut,
@@ -132,7 +143,13 @@ export default function Absensi() {
         {!!data?.menunggu && <button className="btn sm green" onClick={setujuiSemua}><Ikon n="check-check" />Setujui semua yang menunggu ({data.menunggu})</button>}
         <button className="btn sm" onClick={eksporDetail}><Ikon n="download" />Export Excel (detail)</button>
         {admin && <button className="btn sm ghost" onClick={eksporRekap}><Ikon n="download" />Export Rekap Bulanan ({NAMA_BULAN[bl - 1]} {th})</button>}
-        {admin && <button className="btn sm ghost" onClick={eksporTelat} title="Periode 27 bulan lalu – 26 bulan ini, dengan denda keterlambatan"><Ikon n="download" />Rekap Keterlambatan Finance ({NAMA_BULAN[bl - 1]} {th})</button>}</div>
+        {admin && <span className="row" style={{ gap: 6, flexWrap: 'wrap', alignItems: 'center', display: 'inline-flex' }} title="Periode 27 bulan lalu – 26 bulan ini, format rekap finance HC">
+          <select value={jenisFin} onChange={(e) => setJenisFin(e.target.value)} style={{ width: 'auto', margin: 0 }} aria-label="Jenis rekap finance">
+            <option value="telat">Rekap Keterlambatan (Late)</option><option value="lembur">Rekap Lembur (Overtime)</option>
+            <option value="dlk">Rekap Dinas Luar Kota (DLK)</option><option value="hadir">Rekap Kehadiran (Present)</option></select>
+          {jenisFin === 'lembur' && <select value={dasarLembur} onChange={(e) => setDasarLembur(e.target.value)} style={{ width: 'auto', margin: 0 }} aria-label="Dasar periode lembur">
+            <option value="disetujui">Lembur disetujui di periode ini</option><option value="tanggal">Tanggal lembur di periode ini</option></select>}
+          <button className="btn sm ghost" disabled={unduhFin} onClick={eksporFinance}><Ikon n="download" />{unduhFin ? 'Menyiapkan…' : `Unduh Rekap Finance (${NAMA_BULAN[bl - 1]} ${th})`}</button></span>}</div>
       {!data ? <div className="skel" style={{ height: 140, marginTop: 12 }} /> : l.length ? (<>
         <div className="tblwrap"><table><thead><tr>
           <th><input type="checkbox" className="ra-pilih" aria-label="Pilih semua yang menunggu" disabled={!bisaPilih.length}

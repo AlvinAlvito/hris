@@ -1,11 +1,26 @@
 /* Laporan: absensi per tanggal / rentang tanggal (HC), cuti, lembur, dan dinas luar kota per pegawai (HC semua, Supervisor timnya) */
 import { q, q1, type Baris } from '@/lib/db';
 import { gagal, i, s } from '@/lib/http';
-import { cakupanTim, cutiAktif, liburResmi, cutiPenyesuaian, cutiPending, cutiTerpakai, jadwalHari, jatahCuti, KET_TETAP_KERJA, labelKet, need, periodeCuti, sisaCuti, sqlCakupan } from '@/lib/aturan';
+import { cakupanTim, cutiAktif, hariLiburMingguan, liburResmi, cutiPenyesuaian, cutiPending, cutiTerpakai, jadwalHari, jatahCuti, KET_TETAP_KERJA, labelKet, need, periodeCuti, sisaCuti, sqlCakupan } from '@/lib/aturan';
 import { setg } from '@/lib/pengaturan';
+import { statusHarian } from '@/lib/statusHarian';
 import { epoch, hariIso, jamWIB, POLA_TGL, tambahHari, tglWIB } from '@/lib/waktu';
 import type { KumpulanAksi } from '../daftar';
 import { hasilHalaman, paramHalaman, polaCari } from '@/lib/paginasi';
+
+/* periode rekap finance: 27 bulan lalu – 26 bulan ini (sama dengan rekap keterlambatan) */
+function periodeFinance(periode: string) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periode)) gagal('Periode tidak sah');
+  const [th, bl] = periode.split('-').map(Number), lalu = bl === 1 ? `${th - 1}-12` : `${th}-${String(bl - 1).padStart(2, '0')}`;
+  const dari = `${lalu}-27`, sampai = `${periode}-26`, tanggal: string[] = [];
+  for (let t = dari; t <= sampai; t = tambahHari(t, 1)) tanggal.push(t);
+  return { dari, sampai, tanggal };
+}
+/* karyawan yang masuk rekap finance: aktif, atau keluar di dalam/sesudah periode; Direksi (direktur divisi Direksi) terpisah, akun HR tidak ikut */
+async function karyawanFinance(dari: string) {
+  const users = await q(`SELECT * FROM users WHERE aktif=1 OR (tgl_keluar IS NOT NULL AND tgl_keluar >= ?) ORDER BY dept, nama`, [dari]);
+  return { karyawan: users.filter((u) => u.role !== 'direktur'), direksi: users.filter((u) => u.role === 'direktur' && /direksi/i.test(String(u.dept ?? ''))) };
+}
 
 export const aksiLaporan: KumpulanAksi = {
   /* status setiap karyawan pada setiap tanggal.
@@ -181,6 +196,98 @@ export const aksiLaporan: KumpulanAksi = {
       return { nik: u.nik, nama: u.nama, divisi: u.dept, menit: mm, totalMenit: nilaiHari.reduce((a, x) => a + x, 0), potongan: nilaiHari.reduce((a, x) => a + denda(x), 0) };
     });
     return { periode, dari, sampai, tanggal, libur, direksi: users.filter((u) => u.role === 'direktur' && /direksi/i.test(String(u.dept ?? ''))).map((u) => ({ nik: u.nik, nama: u.nama })), karyawan };
+  },
+
+  /* Rekap lembur untuk finance. Dasar periode: tanggal disetujui (bawaan, seperti rekap manual HC: lembur lama yang baru
+     disetujui ikut dibayar bulan ini) atau tanggal lembur. Upah dihitung di Excel dengan rumus HC agar bisa disesuaikan. */
+  async lap_lembur_finance(m) {
+    await need(['admin']);
+    const periode = s(m, 'periode'), { dari, sampai } = periodeFinance(periode), dasar = s(m, 'dasar') === 'tanggal' ? 'tanggal' : 'disetujui';
+    const kolom = dasar === 'tanggal' ? 'p.tanggal' : 'DATE(p.tgl_putusan)';
+    const rows = await q(`SELECT p.user_id, u.nama, u.dept, u.jabatan, p.tanggal, p.jam_mulai, p.jam_selesai, p.menit, p.alasan, p.approver, p.tgl_putusan
+      FROM pengajuan p JOIN users u ON u.id=p.user_id WHERE p.jenis='lembur' AND p.status='Disetujui' AND ${kolom} BETWEEN ? AND ?
+      ORDER BY u.dept, u.nama, p.tanggal, p.jam_mulai`, [dari, sampai]);
+    const orang = new Map<number, Baris>();
+    for (const r of rows) {
+      const o = orang.get(r.user_id) ?? { nama: r.nama, divisi: r.dept, jabatan: r.jabatan, lembur: [] as Baris[] };
+      const libur = await liburResmi(r.tanggal);
+      o.lembur.push({ tanggal: r.tanggal, hariIso: hariIso(r.tanggal), libur: libur?.nama ?? '', mulai: String(r.jam_mulai ?? '').slice(0, 5), selesai: String(r.jam_selesai ?? '').slice(0, 5),
+        menit: Number(r.menit), alasan: r.alasan, approver: r.approver, disetujui: String(r.tgl_putusan ?? '').slice(0, 10) });
+      orang.set(r.user_id, o);
+    }
+    return { periode, dari, sampai, dasar, orang: [...orang.values()] };
+  },
+
+  /* Rekap perjalanan dinas (DLK) untuk finance: hari DLK disetujui di periode; hari berurutan dengan tujuan sama = satu perjalanan.
+     Kompensasi per hari dihitung di Excel (bawaan Rp25.000, mengikuti rekap manual HC). */
+  async lap_dlk_finance(m) {
+    await need(['admin']);
+    const periode = s(m, 'periode'), { dari, sampai } = periodeFinance(periode);
+    const rows = await q(`SELECT k.user_id, u.nama, u.dept, u.jabatan, k.tanggal, k.alasan FROM ketidakhadiran k JOIN users u ON u.id=k.user_id
+      WHERE k.jenis='dlk' AND k.status='Disetujui' AND k.tanggal BETWEEN ? AND ? ORDER BY u.dept, u.nama, k.tanggal`, [dari, sampai]);
+    const orang = new Map<number, Baris>();
+    for (const r of rows) {
+      const o = orang.get(r.user_id) ?? { nama: r.nama, divisi: r.dept, jabatan: r.jabatan, perjalanan: [] as Baris[] };
+      const akhir = o.perjalanan[o.perjalanan.length - 1], tujuan = String(r.alasan ?? '').trim();
+      // hari kerja berikutnya (lewat akhir pekan/libur di antaranya) dengan tujuan sama masih satu perjalanan
+      let sambung = false;
+      if (akhir && akhir.tujuan.toLowerCase() === tujuan.toLowerCase()) {
+        sambung = true;
+        for (let t = tambahHari(akhir.kembali, 1); t < r.tanggal; t = tambahHari(t, 1)) if (hariIso(t) < 6 && !(await liburResmi(t))) { sambung = false; break; }
+      }
+      if (sambung) { akhir.kembali = r.tanggal; akhir.hari.push(r.tanggal); }
+      else o.perjalanan.push({ berangkat: r.tanggal, kembali: r.tanggal, hari: [r.tanggal], tujuan });
+      orang.set(r.user_id, o);
+    }
+    for (const o of orang.values()) for (const p of o.perjalanan) {
+      const jenis = [];
+      for (const t of p.hari) { const lb = await liburResmi(t); jenis.push(lb ? 'libur' : hariIso(t) === 7 ? 'minggu' : hariIso(t) === 6 ? 'sabtu' : 'biasa'); }
+      p.jumlahHari = p.hari.length;
+      p.ketHari = jenis.every((j) => j === 'biasa') ? 'Hari kerja' : [...new Set(jenis.map((j) => ({ biasa: 'Hari kerja', sabtu: 'Sabtu', minggu: 'Minggu', libur: 'Libur nasional' } as Record<string, string>)[j]))].join(' + ');
+    }
+    return { periode, dari, sampai, orang: [...orang.values()] };
+  },
+
+  /* Rekap kehadiran untuk finance: kode per hari mengikuti rekap manual HC.
+     1 hadir · PD perjalanan dinas · W WFH · S sakit · I izin · C cuti tahunan · C.K cuti lain · A alpa · kosong = libur / belum terjadi / belum bekerja.
+     Hari kerja = hari terjadwal masuk di periode (selama masa kerja). Potongan dihitung di Excel dari tunjangan kehadiran yang diisi HC. */
+  async lap_hadir_finance(m) {
+    await need(['admin']);
+    const periode = s(m, 'periode'), { dari, sampai, tanggal } = periodeFinance(periode), hariIni = tglWIB();
+    const { karyawan, direksi } = await karyawanFinance(dari);
+    const libur: string[] = [];
+    for (const t of tanggal) if (await liburResmi(t)) libur.push(t);
+    const peta = await statusHarian(karyawan, dari, sampai);
+    const ids = karyawan.map((u) => Number(u.id)).join(',') || '0';
+    const ket: Record<string, string> = {}, cuti: Record<string, string> = {}, jdw: Record<string, number | null> = {};
+    for (const r of await q(`SELECT user_id, tanggal, jenis FROM ketidakhadiran WHERE status='Disetujui' AND tanggal BETWEEN ? AND ? AND user_id IN (${ids})`, [dari, sampai]))
+      ket[r.user_id + '|' + r.tanggal] = r.jenis;
+    for (const r of await q(`SELECT user_id, jenis, mulai, selesai FROM cuti WHERE status='Disetujui' AND mulai<=? AND selesai>=? AND user_id IN (${ids})`, [sampai, dari]))
+      for (let t = r.mulai > dari ? r.mulai : dari; t <= (r.selesai < sampai ? r.selesai : sampai); t = tambahHari(t, 1)) cuti[r.user_id + '|' + t] = r.jenis;
+    for (const r of await q(`SELECT user_id, tanggal, shift_id FROM jadwal_shift WHERE tanggal BETWEEN ? AND ? AND user_id IN (${ids})`, [dari, sampai]))
+      jdw[r.user_id + '|' + r.tanggal] = r.shift_id;
+    const hasil = [];
+    for (const u of karyawan) {
+      const mingguan = await hariLiburMingguan(u), kode: Record<string, string | number> = {};
+      let hariKerja = 0;
+      for (const t of tanggal) {
+        const k = u.id + '|' + t;
+        const bekerja = (!u.tgl_masuk || t >= u.tgl_masuk) && (!u.tgl_keluar || t <= u.tgl_keluar);
+        const liburHari = k in jdw ? jdw[k] === null : mingguan.includes(hariIso(t)) || ((u.jam_mode ?? 'tetap') !== 'shift' && libur.includes(t));
+        if (bekerja && !liburHari) hariKerja++;
+        if (!bekerja || t > hariIni) continue;
+        const st = peta[u.id]?.[t] ?? 'luar', jk = ket[k];
+        if (jk === 'dlk') kode[t] = 'PD';
+        else if (jk === 'wfh') kode[t] = 'W';
+        else if (st === 'hadir' || st === 'telat' || st === 'setengah') kode[t] = 1;
+        else if (st === 'cuti') kode[t] = /tahunan/i.test(cuti[k] ?? '') ? 'C' : 'C.K';
+        else if (st === 'ket') kode[t] = jk === 'sakit' ? 'S' : jk === 'libur' ? '' : 'I';
+        else if (st === 'mangkir') kode[t] = 'A';
+      }
+      hasil.push({ nik: u.nik, nama: u.nama, jabatan: u.jabatan ?? '', divisi: u.dept ?? '', tglMasuk: u.tgl_masuk ?? '', kode, hariKerja,
+        sisaCuti: (await cutiAktif(u)) ? await sisaCuti(u) : null });
+    }
+    return { periode, dari, sampai, tanggal, libur, direksi: direksi.map((u) => ({ nama: u.nama, jabatan: u.jabatan ?? '' })), karyawan: hasil };
   },
 
   async lap_cuti(m) {
