@@ -31,6 +31,7 @@ export const NAV: ItemNav[] = [
   { k: 'lapabs', href: '/laporan/absensi', t: 'Laporan Absensi', ic: 'file-spreadsheet', g: 'Laporan', s: adm, siap: true },
   { k: 'lapcuti', href: '/laporan/cuti', t: 'Laporan Cuti', ic: 'list-checks', g: 'Laporan', s: penyetuju, siap: true },
   { k: 'laplembur', href: '/laporan/lembur', t: 'Laporan Lembur', ic: 'clock', g: 'Laporan', s: penyetuju, siap: true },
+  { k: 'lapdinas', href: '/laporan/dinas', t: 'Laporan Dinas Luar Kota', ic: 'map-pin', g: 'Laporan', s: penyetuju, siap: true },
   { k: 'pay', href: '/payroll', t: 'Payroll', ic: 'calculator', g: 'Keuangan', s: adm, siap: true },
   { k: 'orgk', href: '/organisasi', t: 'Struktur Organisasi', ic: 'network', g: 'Informasi', s: (m) => !adm(m), siap: true },
   { k: 'info', href: '/informasi', t: 'Pengumuman & Libur', ic: 'megaphone', g: 'Informasi', s: () => true, siap: true },

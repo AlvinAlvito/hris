@@ -1,4 +1,4 @@
-/* Laporan: absensi per tanggal / rentang tanggal (HC), cuti per pegawai dan lembur per pegawai (HC semua, Supervisor timnya) */
+/* Laporan: absensi per tanggal / rentang tanggal (HC), cuti, lembur, dan dinas luar kota per pegawai (HC semua, Supervisor timnya) */
 import { q, q1, type Baris } from '@/lib/db';
 import { gagal, i, s } from '@/lib/http';
 import { cakupanTim, cutiAktif, liburResmi, cutiPenyesuaian, cutiPending, cutiTerpakai, jadwalHari, jatahCuti, KET_TETAP_KERJA, labelKet, need, periodeCuti, sisaCuti, sqlCakupan } from '@/lib/aturan';
@@ -116,6 +116,47 @@ export const aksiLaporan: KumpulanAksi = {
       menitMenunggu: Number(x.menit_tunggu), jumlahMenunggu: Number(x.n_tunggu), jumlahDitolak: Number(x.n_tolak), rincian: detail[x.user_id] ?? [] }));
     if (m.all) return items;
     return { ...hasilHalaman(items, Number(tot?.orang ?? 0), pg.page), ringkas: { orang: Number(tot?.orang ?? 0), menitDisetujui: Number(tot?.menit_setuju ?? 0), menitMenunggu: Number(tot?.menit_tunggu ?? 0), jumlahMenunggu: Number(tot?.n_tunggu ?? 0) } };
+  },
+
+  /* Dinas luar kota per pegawai, dari pengajuan DLK (satu baris per hari). Hari dinas dipisah hari biasa / Sabtu / Minggu & libur
+     karena uang dinas bisa berbeda. Satu perjalanan = hari berurutan yang disetujui dengan tujuan yang sama. */
+  async lap_dlk(m) {
+    const u = await need(['atasan']), tim = await cakupanTim(u);
+    const kini = tglWIB(), dari = s(m, 'dari', kini.slice(0, 8) + '01'), sampai = s(m, 'sampai', kini);
+    if (!POLA_TGL.test(dari) || !POLA_TGL.test(sampai) || sampai < dari) gagal('Rentang tanggal tidak sah');
+    if ((epoch(sampai) - epoch(dari)) / 86400 > 366) gagal('Rentang paling panjang satu tahun');
+    const pg = paramHalaman(m), cariSql = pg.cari ? ' AND (x.nama LIKE ? OR x.nik LIKE ? OR x.dept LIKE ? OR k.alasan LIKE ?)' : '';
+    const args: unknown[] = [dari, sampai, ...(pg.cari ? Array(4).fill(polaCari(pg.cari)) : [])];
+    const sumber = `FROM ketidakhadiran k JOIN users x ON x.id=k.user_id
+      WHERE k.jenis='dlk' AND k.status<>'Dibatalkan' AND k.tanggal BETWEEN ? AND ?${cariSql}${sqlCakupan(tim, 'k.user_id')}`;
+    const ang = `COALESCE(SUM(k.status='Disetujui'),0) n_setuju, COALESCE(SUM(k.status IN ('Menunggu HR','Menunggu Rekomendasi')),0) n_tunggu,
+      COALESCE(SUM(k.status LIKE 'Ditolak%'),0) n_tolak`;
+    const tot = await q1(`SELECT COUNT(DISTINCT k.user_id) orang, ${ang} ${sumber}`, args);
+    const baris = await q(`SELECT k.user_id, x.nik, x.nama, x.dept, x.jabatan, ${ang} ${sumber} GROUP BY k.user_id ORDER BY n_setuju DESC, x.nama` + (m.all ? '' : ' LIMIT ? OFFSET ?'),
+      m.all ? args : [...args, pg.limit, pg.offset]);
+    const ids = baris.map((x) => Number(x.user_id)).join(',') || '0';
+    const abs = new Map((await q(`SELECT user_id, tanggal, in_time, out_time FROM absensi WHERE user_id IN (${ids}) AND tanggal BETWEEN ? AND ? AND in_time IS NOT NULL`, [dari, sampai]))
+      .map((r) => [r.user_id + '|' + r.tanggal, r]));
+    const detail: Record<number, Baris[]> = {}, per: Record<number, Record<string, number>> = {}, perjalanan: Record<number, number> = {};
+    const akhir: Record<number, { t: string; tujuan: string }> = {};
+    for (const r of await q(`SELECT k.user_id, k.tanggal, k.alasan, k.bukti_link, k.status, k.approver, k.created_at FROM ketidakhadiran k
+      WHERE k.jenis='dlk' AND k.status<>'Dibatalkan' AND k.tanggal BETWEEN ? AND ? AND k.user_id IN (${ids}) ORDER BY k.user_id, k.tanggal, k.id`, [dari, sampai])) {
+      const libur = await liburResmi(r.tanggal), h = hariIso(r.tanggal);
+      const jenisHari = libur ? 'libur' : h === 7 ? 'minggu' : h === 6 ? 'sabtu' : 'biasa', a = abs.get(r.user_id + '|' + r.tanggal);
+      (detail[r.user_id] ??= []).push({ tanggal: r.tanggal, jenisHari, namaLibur: libur?.nama ?? '', tujuan: r.alasan, buktiLink: r.bukti_link ?? '', status: r.status,
+        approver: r.approver, diajukan: r.created_at, masuk: a?.in_time ? String(a.in_time).slice(0, 5) : '', pulang: a?.out_time ? String(a.out_time).slice(0, 5) : '' });
+      if (r.status !== 'Disetujui') continue;
+      const o = (per[r.user_id] ??= {}); o[jenisHari] = (o[jenisHari] ?? 0) + 1;
+      const tujuan = String(r.alasan ?? '').trim().toLowerCase(), sblm = akhir[r.user_id];
+      if (!sblm || tambahHari(sblm.t, 1) !== r.tanggal || sblm.tujuan !== tujuan) perjalanan[r.user_id] = (perjalanan[r.user_id] ?? 0) + 1;
+      akhir[r.user_id] = { t: r.tanggal, tujuan };
+    }
+    const items = baris.map((x) => ({ userId: x.user_id, nik: x.nik, nama: x.nama, divisi: x.dept, jabatan: x.jabatan,
+      hariDisetujui: Number(x.n_setuju), perjalanan: perjalanan[x.user_id] ?? 0, hariPerJenis: { biasa: 0, sabtu: 0, minggu: 0, libur: 0, ...per[x.user_id] },
+      hariMenunggu: Number(x.n_tunggu), hariDitolak: Number(x.n_tolak), rincian: (detail[x.user_id] ?? []).reverse() }));
+    if (m.all) return items;
+    return { ...hasilHalaman(items, Number(tot?.orang ?? 0), pg.page),
+      ringkas: { orang: Number(tot?.orang ?? 0), hariDisetujui: Number(tot?.n_setuju ?? 0), hariMenunggu: Number(tot?.n_tunggu ?? 0), hariDitolak: Number(tot?.n_tolak ?? 0) } };
   },
 
   /* Rekap keterlambatan untuk finance: periode absensi 27 bulan lalu – 26 bulan ini.
