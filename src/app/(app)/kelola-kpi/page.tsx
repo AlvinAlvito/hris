@@ -1,31 +1,33 @@
 'use client';
-/* KPI Karyawan: Supervisor memverifikasi KPI timnya; HC melihat semua karyawan dan mengelola template KPI per jabatan */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+/* KPI Karyawan: atasan / HC mengisi KPI & KBI, atasan memverifikasi; HC mengelola template dan melihat recap KPI–KBI–insentif */
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { isAdminUp, useAplikasi } from '@/components/Aplikasi';
 import { Ikon } from '@/components/Ikon';
 import { bulanTeks, daftarPeriode, GrafikRiwayat, LembarKpi, SkorKpi, WARNA_STATUS, type LaporKpi, type RiwayatKpi } from '@/components/KpiLapor';
 import { api } from '@/lib/klien/api';
 import { keExcel } from '@/lib/klien/excel';
+import { rupiah } from '@/lib/klien/format';
 
-type Baris = { userId: number; nama: string; nik: string; jabatan: string; dept: string; laporId: number | null; template: string; status: string; skor: number | null; predikat: string };
+type Baris = { userId: number; nama: string; nik: string; jabatan: string; dept: string; laporId: number | null; template: string; status: string; skor: number | null; predikat: string; skorKbi: number | null };
 type DataTim = { periode: string; admin: boolean; baris: Baris[]; stat: { menunggu: number; disetujui: number; belum: number; tanpa: number; rata: number | null } };
-type Indikator = { id?: number; nama: string; deskripsi: string; satuan: string; target: number | string; bobot: number | string; arah: string; sumber: string };
+type Indikator = { id?: number; jenis: 'kpi' | 'kbi'; kelompok: string; nama: string; deskripsi: string; satuan: string; target: number | string; bobot: number | string; arah: string; sumber: string };
 type Template = { id: number; nama: string; keterangan: string; aktif: boolean; jabatan: string[]; jumlahKaryawan: number; indikator: Indikator[] };
 type DataTemplate = { template: Template[]; jabatan: string[]; karyawan: { id: number; nama: string; jabatan: string; dept: string; templateKhusus: number | null }[] };
 
-const LABEL: Record<string, string> = { draf: 'Draf', diajukan: 'Menunggu verifikasi', disetujui: 'Disetujui', dikembalikan: 'Dikembalikan', belum: 'Belum mengisi', tanpa: 'Tanpa template' };
+const LABEL: Record<string, string> = { draf: 'Draf', diajukan: 'Menunggu verifikasi', disetujui: 'Disetujui', dikembalikan: 'Dikembalikan', belum: 'Belum diisi', tanpa: 'Tanpa template' };
 
 export default function KelolaKpi() {
   const { me } = useAplikasi();
   const admin = isAdminUp(me);
-  const [tab, setTab] = useState<'nilai' | 'template'>('nilai');
+  const [tab, setTab] = useState<'nilai' | 'recap' | 'template'>('nilai');
   // jalan pintas dari baris "Tanpa template": buka form template dengan jabatan karyawan tersebut
   const [jabatanBaru, setJabatanBaru] = useState<string | null>(null);
   return (<>
-    {admin && <div className="seg kp-tab">{([['nilai', 'circle-check', 'Penilaian'], ['template', 'layers', 'Template KPI']] as const).map(([k, ic, t]) =>
+    {admin && <div className="seg kp-tab">{([['nilai', 'circle-check', 'Penilaian'], ['recap', 'file-spreadsheet', 'Recap & Insentif'], ['template', 'layers', 'Template KPI & KBI']] as const).map(([k, ic, t]) =>
       <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}><Ikon n={ic} />{t}</button>)}</div>}
     {tab === 'nilai' ? <Penilaian buatTemplate={admin ? (j) => { setJabatanBaru(j); setTab('template'); } : undefined} />
-      : <KelolaTemplate jabatanBaru={jabatanBaru} selesaiJabatan={() => setJabatanBaru(null)} />}
+      : tab === 'recap' ? <Recap />
+        : <KelolaTemplate jabatanBaru={jabatanBaru} selesaiJabatan={() => setJabatanBaru(null)} />}
   </>);
 }
 
@@ -49,7 +51,7 @@ function Penilaian({ buatTemplate }: { buatTemplate?: (jabatan: string) => void 
     bukaSheet(<DetailKpi userId={x.userId} periode={periode} segarkan={muat} />, { besar: true, saatTutup: muat });
   };
   const ekspor = () => d && keExcel(d.baris.map((x) => ({ NIK: x.nik, Nama: x.nama, Jabatan: x.jabatan, Divisi: x.dept, Template: x.template,
-    Status: LABEL[x.status], Skor: x.skor ?? '', Predikat: x.predikat })), 'KPI', 'kpi-' + periode).catch(galat);
+    Status: LABEL[x.status], 'Skor KPI': x.skor ?? '', Predikat: x.predikat, 'Skor KBI': x.skorKbi ?? '' })), 'KPI', 'kpi-' + periode).catch(galat);
   return (<>
     <div className="card kp-pilih-bulan">
       <h3 style={{ margin: 0 }}><Ikon n="target" />KPI Karyawan</h3>
@@ -73,7 +75,7 @@ function Penilaian({ buatTemplate }: { buatTemplate?: (jabatan: string) => void 
               <span className="kp-nama"><b>{x.nama}</b><span className="tiny muted">{x.jabatan}{x.dept ? ' · ' + x.dept : ''}</span></span>
               <span className="tiny muted kp-tpl">{x.template || '—'}</span>
               <span><span className={'badge ' + WARNA_STATUS[x.status]}>{LABEL[x.status]}</span></span>
-              <span className="kp-skor-sel"><SkorKpi skor={x.skor} /><span className="tiny muted">{x.predikat}</span></span>
+              <span className="kp-skor-sel"><SkorKpi skor={x.skor} /><span className="tiny muted">{x.predikat}{x.skorKbi != null && ` · KBI ${x.skorKbi.toLocaleString('id-ID', { maximumFractionDigits: 1 })}`}</span></span>
             </button>))}</div>)}
       </div>
     </>)}
@@ -83,15 +85,75 @@ function Penilaian({ buatTemplate }: { buatTemplate?: (jabatan: string) => void 
 function DetailKpi({ userId, periode, segarkan }: { userId: number; periode: string; segarkan: () => void }) {
   const { galat, tutupSheet } = useAplikasi();
   const [p, setP] = useState(periode);
-  const [d, setD] = useState<{ lapor: LaporKpi; riwayat: RiwayatKpi[]; bolehVerifikasi: boolean; admin: boolean } | null>(null);
+  const [d, setD] = useState<{ lapor: LaporKpi; riwayat: RiwayatKpi[]; bolehVerifikasi: boolean; bolehSetujui: boolean; admin: boolean } | null>(null);
   const muat = useCallback(() => { api<typeof d>('kpi_detail', { userId, periode: p }, true).then(setD).catch((e) => { galat(e); tutupSheet(); }); }, [userId, p, galat, tutupSheet]);
   useEffect(() => { muat(); }, [muat]);
   if (!d) return <div className="skel" style={{ height: 320 }} />;
   return (<div className="grid-2 kp-detail">
-    <div><LembarKpi key={d.lapor.id + d.lapor.status} lapor={d.lapor} mode={d.bolehVerifikasi ? 'verifikator' : 'karyawan'} admin={d.admin} segarkan={() => { muat(); segarkan(); }} /></div>
+    <div><LembarKpi key={d.lapor.id + d.lapor.status} lapor={d.lapor} mode={d.bolehVerifikasi ? 'verifikator' : 'karyawan'} admin={d.admin} bolehSetujui={d.bolehSetujui} segarkan={() => { muat(); segarkan(); }} /></div>
     <div className="card"><h3><Ikon n="trending-up" />Riwayat {d.lapor.nama.split(' ')[0]}</h3><GrafikRiwayat riwayat={d.riwayat} pilih={setP} />
       <div className="tiny muted" style={{ marginTop: 8 }}>Ketuk batang untuk membuka bulan lain.</div></div>
   </div>);
+}
+
+/* ---------------- RECAP KPI, KBI & INSENTIF (HC) ---------------- */
+type DataRecap = { tahun: number; bulan: string[]; ambang: [number, number][];
+  baris: { userId: number; nik: string; nama: string; divisi: string; jabatan: string; aktif: boolean; bulan: Record<string, { kpi: number | null; kbi: number | null; insentif: number | null; status: string; migrasi: boolean } | null> }[] };
+const BLN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const pct = (v: number | null | undefined) => (v == null ? '' : v.toLocaleString('id-ID', { maximumFractionDigits: 1 }) + '%');
+function Recap() {
+  const { galat, toast, tanya } = useAplikasi();
+  const kini = new Date(), awal = kini.getMonth() + 1 >= 7 ? kini.getFullYear() : kini.getFullYear() - 1;
+  const [tahun, setTahun] = useState(awal), [cari, setCari] = useState(''), [hanyaIsi, setHanyaIsi] = useState(true);
+  const [d, setD] = useState<DataRecap | null>(null);
+  const muat = useCallback(() => { setD(null); api<DataRecap>('kpi_recap', { tahun }, true).then(setD).catch(galat); }, [tahun, galat]);
+  useEffect(() => { muat(); }, [muat]);
+  const tampil = (d?.baris ?? []).filter((b) => (!hanyaIsi || Object.values(b.bulan).some(Boolean))
+    && (!cari || [b.nama, b.divisi, b.jabatan, b.nik].some((v) => String(v ?? '').toLowerCase().includes(cari.toLowerCase()))));
+  const bulanAda = (d?.bulan ?? []).filter((p) => (d?.baris ?? []).some((b) => b.bulan[p]));
+  const rata = (x: { kpi: number | null; kbi: number | null } | null) => (x && x.kpi != null && x.kbi != null ? (x.kpi + x.kbi) / 2 : x?.kpi ?? x?.kbi ?? null);
+  const ekspor = () => d && keExcel(tampil.map((b, i) => {
+    const o: Record<string, string | number> = { No: i + 1, NIK: b.nik, 'Nama Karyawan': b.nama, Unit: b.divisi || '' };
+    for (const p of bulanAda) {
+      const x = b.bulan[p], k = `${BLN[+p.slice(5) - 1]} ${p.slice(0, 4)}`;
+      o[`${k} KPI (%)`] = x?.kpi ?? ''; o[`${k} KBI (%)`] = x?.kbi ?? ''; o[`${k} Insentif`] = x?.insentif ?? ''; o[`${k} Average (%)`] = rata(x) == null ? '' : Math.round(rata(x)! * 100) / 100;
+    }
+    o['Total Insentif'] = bulanAda.reduce((a, p) => a + (b.bulan[p]?.insentif ?? 0), 0);
+    return o;
+  }), 'Recap', `recap-kpi-kbi-${d.tahun}-${d.tahun + 1}`).catch(galat);
+  const ubahAmbang = async () => {
+    if (!d) return;
+    const t = await tanya('Ambang insentif, satu per baris: "skor minimal = rupiah"', d.ambang.map(([a, r]) => `${a} = ${r}`).join('\n'), { judul: 'Insentif KPI', panjang: true, wajib: true });
+    if (t === null) return;
+    const ambang = t.split('\n').map((x) => x.split('=').map((y) => Number(y.replace(/[^\d.]/g, '')))).filter((x) => x.length === 2 && x.every((y) => Number.isFinite(y)));
+    api<{ pesan: string }>('kpi_insentif_simpan', { ambang }).then((r) => { toast(r.pesan); muat(); }).catch(galat);
+  };
+  return (<>
+    <div className="card kp-pilih-bulan">
+      <div><h3 style={{ margin: 0 }}><Ikon n="file-spreadsheet" />Recap KPI, KBI & Insentif</h3>
+        <div className="tiny muted">Tahun KPI Juli–Juni. Insentif dihitung dari skor KPI final: {d?.ambang.map(([a, r]) => `≥${a}% ${rupiah(r)}`).join(' · ')}.</div></div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <select value={tahun} onChange={(e) => setTahun(+e.target.value)} style={{ width: 'auto' }}>{[awal + 1, awal, awal - 1].map((y) => <option key={y} value={y}>Juli {y} – Juni {y + 1}</option>)}</select>
+        <button className="btn ghost sm auto" onClick={ubahAmbang} disabled={!d}><Ikon n="sliders-horizontal" />Ambang insentif</button>
+        <button className="btn ghost sm auto" onClick={ekspor} disabled={!d}><Ikon n="download" />Excel</button></div>
+    </div>
+    <div className="card">
+      <div className="kp-filter"><input placeholder="Cari nama, divisi…" value={cari} onChange={(e) => setCari(e.target.value)} />
+        <label className="tiny" style={{ display: 'flex', gap: 6, alignItems: 'center', margin: 0 }}><input type="checkbox" checked={hanyaIsi} onChange={(e) => setHanyaIsi(e.target.checked)} style={{ width: 'auto' }} />Hanya yang punya nilai</label></div>
+      {!d ? <div className="skel" style={{ height: 240 }} /> : !bulanAda.length ? <div className="empty">Belum ada nilai KPI pada tahun ini.</div> : (
+        <div className="tblwrap"><table><thead>
+          <tr><th rowSpan={2}>Nama</th><th rowSpan={2}>Unit</th>{bulanAda.map((p) => <th key={p} colSpan={4} style={{ textAlign: 'center' }}>{BLN[+p.slice(5) - 1]} {p.slice(0, 4)}</th>)}<th rowSpan={2} className="r">Total insentif</th></tr>
+          <tr>{bulanAda.map((p) => <Fragment key={p}><th className="r">KPI</th><th className="r">KBI</th><th className="r">Insentif</th><th className="r">Avg</th></Fragment>)}</tr>
+        </thead><tbody>{tampil.map((b) => (
+          <tr key={b.userId}><td><b>{b.nama}</b>{!b.aktif && <span className="badge b-gray" style={{ marginLeft: 6 }}>nonaktif</span>}</td><td>{b.divisi || '—'}</td>
+            {bulanAda.map((p) => { const x = b.bulan[p]; return <Fragment key={p}>
+              <td key={p + 'k'} className="r" title={x ? (x.migrasi ? 'Dari Recap spreadsheet' : x.status) : ''} style={{ opacity: x && x.status !== 'disetujui' ? 0.55 : 1 }}>{pct(x?.kpi)}</td>
+              <td key={p + 'b'} className="r">{pct(x?.kbi)}</td><td key={p + 'i'} className="r">{x?.insentif != null ? rupiah(x.insentif) : ''}</td><td key={p + 'a'} className="r">{pct(rata(x))}</td></Fragment>; })}
+            <td className="r"><b>{rupiah(bulanAda.reduce((a, p) => a + (b.bulan[p]?.insentif ?? 0), 0))}</b></td></tr>))}
+        </tbody></table></div>)}
+      <div className="tiny muted" style={{ marginTop: 8 }}>Angka pudar = belum final (belum disetujui atasan). Avg = rata-rata KPI dan KBI.</div>
+    </div>
+  </>);
 }
 
 /* ---------------- TEMPLATE (HC) ---------------- */
@@ -123,7 +185,8 @@ function KelolaTemplate({ jabatanBaru, selesaiJabatan }: { jabatanBaru: string |
           <div className="kp-tpl-atas"><h4>{t.nama}</h4>{!t.aktif && <span className="badge b-gray">Nonaktif</span>}</div>
           {t.keterangan && <div className="tiny muted">{t.keterangan}</div>}
           <div className="kp-chip">{t.jabatan.length ? t.jabatan.map((j) => <span key={j}>{j}</span>) : <span className="kosong">Belum dikaitkan ke jabatan</span>}</div>
-          <ul className="kp-tpl-ind">{t.indikator.map((x) => <li key={x.id}><span>{x.nama}{x.sumber !== 'manual' && <span className="badge b-blue kp-oto">otomatis</span>}</span><b>{x.bobot}%</b></li>)}</ul>
+          <ul className="kp-tpl-ind">{t.indikator.filter((x) => x.jenis !== 'kbi').map((x) => <li key={x.id}><span>{x.nama}{x.sumber !== 'manual' && <span className="badge b-blue kp-oto">otomatis</span>}</span><b>{x.bobot}%</b></li>)}</ul>
+          {t.indikator.some((x) => x.jenis === 'kbi') && <div className="tiny muted">+ {t.indikator.filter((x) => x.jenis === 'kbi').length} aspek KBI: {t.indikator.filter((x) => x.jenis === 'kbi').map((x) => x.kelompok || x.nama).join(', ')}</div>}
           <div className="kp-tpl-bawah"><span className="tiny muted"><Ikon n="users" />{t.jumlahKaryawan} karyawan</span>
             <button className="btn ghost sm auto" onClick={() => form(t)}><Ikon n="pencil" />Ubah</button>
             <button className="btn ghost sm auto" onClick={() => form(t, true)} title="Duplikat"><Ikon n="copy" /></button>
@@ -158,7 +221,8 @@ const SUMBER_BAWAAN: Record<string, { nama: string; deskripsi: string; satuan: s
   log_kelengkapan: { nama: 'Kelengkapan log kerja', deskripsi: 'Persentase hari kerja yang terisi catatan pekerjaan (otomatis)', satuan: '%', target: 100 },
 };
 const TARGET_TETAP = ['kehadiran', 'tepat_waktu'];
-const BARU = (): Indikator => ({ nama: '', deskripsi: '', satuan: '', target: '', bobot: '', arah: 'naik', sumber: 'manual' });
+const BARU = (): Indikator => ({ jenis: 'kpi', kelompok: '', nama: '', deskripsi: '', satuan: '', target: '', bobot: '', arah: 'naik', sumber: 'manual' });
+const BARU_KBI = (): Indikator => ({ jenis: 'kbi', kelompok: '', nama: '', deskripsi: '', satuan: 'skor', target: 4, bobot: 0, arah: 'naik', sumber: 'manual' });
 function FormTemplate({ t, salin, jabatan, awalJabatan, selesai }: { t: Template | null; salin: boolean; jabatan: string[]; awalJabatan?: string; selesai: () => void }) {
   const { tutupSheet, toast, galat } = useAplikasi();
   const [nama, setNama] = useState(t ? t.nama + (salin ? ' (salinan)' : '') : awalJabatan ? 'KPI ' + awalJabatan : '');
@@ -166,8 +230,9 @@ function FormTemplate({ t, salin, jabatan, awalJabatan, selesai }: { t: Template
   const [jab, setJab] = useState<string[]>(salin ? [] : t?.jabatan ?? (awalJabatan ? [awalJabatan] : []));
   const [ind, setInd] = useState<Indikator[]>(() => t ? t.indikator.map((x) => ({ ...x, id: salin ? undefined : x.id }))
     : [{ ...BARU(), nama: 'Kehadiran', deskripsi: 'Persentase hadir pada hari kerja (otomatis dari absensi)', satuan: '%', target: 100, bobot: 15, sumber: 'kehadiran' }, BARU()]);
+  const nKpi = ind.filter((x) => x.jenis !== 'kbi').length;
   const [cariJab, setCariJab] = useState(''), [kirim, setKirim] = useState(false);
-  const total = ind.reduce((a, x) => a + (Number(x.bobot) || 0), 0);
+  const total = ind.filter((x) => x.jenis !== 'kbi').reduce((a, x) => a + (Number(x.bobot) || 0), 0);
   const set = (n: number, k: keyof Indikator, v: string) => setInd((l) => l.map((x, i) => {
     if (i !== n) return x;
     const y = { ...x, [k]: v };
@@ -181,12 +246,12 @@ function FormTemplate({ t, salin, jabatan, awalJabatan, selesai }: { t: Template
   }));
   // skala bobot secara proporsional agar totalnya tepat 100 (sisa pembulatan ditaruh di bobot terbesar)
   const seimbangkan = () => setInd((l) => {
-    const b = l.map((x) => Math.max(0, Number(x.bobot) || 0)), jml = b.reduce((a, x) => a + x, 0);
+    const b = l.map((x) => (x.jenis === 'kbi' ? 0 : Math.max(0, Number(x.bobot) || 0))), jml = b.reduce((a, x) => a + x, 0);
     if (!jml) return l;
     const baru = b.map((x) => Math.round((x / jml) * 100));
     const sisa = 100 - baru.reduce((a, x) => a + x, 0), terbesar = baru.indexOf(Math.max(...baru));
     baru[terbesar] += sisa;
-    return l.map((x, i) => ({ ...x, bobot: baru[i] }));
+    return l.map((x, i) => (x.jenis === 'kbi' ? x : { ...x, bobot: baru[i] }));
   });
   const simpan = () => {
     setKirim(true);
@@ -203,12 +268,14 @@ function FormTemplate({ t, salin, jabatan, awalJabatan, selesai }: { t: Template
     <div className="kp-jabatan">{jabatan.filter((j) => !cariJab || j.toLowerCase().includes(cariJab.toLowerCase()) || jab.includes(j)).map((j) => (
       <label key={j} className={jab.includes(j) ? 'on' : ''}><input type="checkbox" checked={jab.includes(j)} onChange={() => setJab((x) => (x.includes(j) ? x.filter((y) => y !== j) : [...x, j]))} />{j}</label>))}</div>
 
-    <div className="kp-ind-kepala"><h4 style={{ margin: 0 }}>Indikator</h4>
+    <div className="kp-ind-kepala"><h4 style={{ margin: 0 }}>Indikator KPI</h4>
       <span className={'badge ' + (Math.abs(total - 100) < 0.01 ? 'b-green' : 'b-red')}>Total bobot {Math.round(total * 100) / 100}%{Math.abs(total - 100) >= 0.01 && ' (harus 100%)'}</span></div>
-    {ind.map((x, n) => (
+    {ind.map((x, n) => x.jenis === 'kbi' ? null : (
       <div key={n} className="kp-ind-form">
         <div className="kp-ind-form-atas"><b>#{n + 1}</b>
-          <button type="button" className="btn ghost sm auto" disabled={ind.length < 2} onClick={() => setInd((l) => l.filter((_, i) => i !== n))} aria-label="Hapus indikator"><Ikon n="trash-2" /></button></div>
+          <button type="button" className="btn ghost sm auto" disabled={nKpi < 2} onClick={() => setInd((l) => l.filter((_, i) => i !== n))} aria-label="Hapus indikator"><Ikon n="trash-2" /></button></div>
+        <label style={{ marginTop: 0 }}>Objectives <span className="tiny muted">(opsional, pengelompokan)</span></label>
+        <input value={x.kelompok} onChange={(e) => set(n, 'kelompok', e.target.value)} placeholder="mis. Pencapaian KPI Utama — Officer Event Management" />
         <div className="row"><div style={{ flex: 2 }}><label>Nama indikator *</label><input value={x.nama} onChange={(e) => set(n, 'nama', e.target.value)} placeholder="mis. Sekolah baru yang dikunjungi" /></div>
           <div><label>Sumber data</label><select value={x.sumber} onChange={(e) => set(n, 'sumber', e.target.value)}>
             <option value="manual">Diisi karyawan</option>
@@ -223,7 +290,19 @@ function FormTemplate({ t, salin, jabatan, awalJabatan, selesai }: { t: Template
           <div><label>Satuan</label><input value={x.satuan} disabled={x.arah === 'ya_tidak' || x.sumber !== 'manual'} onChange={(e) => set(n, 'satuan', e.target.value)} placeholder="sekolah" /></div>
           <div><label>Bobot (%)</label><input type="number" min={1} max={100} step="any" value={x.bobot} onChange={(e) => set(n, 'bobot', e.target.value)} /></div></div>
       </div>))}
-    <button type="button" className="btn ghost" disabled={ind.length >= 15} onClick={() => setInd((l) => [...l, BARU()])}><Ikon n="plus" />Tambah indikator</button>
+    <button type="button" className="btn ghost" disabled={ind.length >= 30} onClick={() => setInd((l) => [...l, BARU()])}><Ikon n="plus" />Tambah indikator KPI</button>
+
+    <div className="kp-ind-kepala" style={{ marginTop: 18 }}><h4 style={{ margin: 0 }}>Indikator KBI (perilaku)</h4>
+      <span className="tiny muted">Skor 1–5 dinilai atasan · tanpa bobot · nilai KBI = total realisasi ÷ total target</span></div>
+    {ind.map((x, n) => x.jenis !== 'kbi' ? null : (
+      <div key={n} className="kp-ind-form">
+        <div className="kp-ind-form-atas"><b>KBI</b>
+          <button type="button" className="btn ghost sm auto" onClick={() => setInd((l) => l.filter((_, i) => i !== n))} aria-label="Hapus indikator KBI"><Ikon n="trash-2" /></button></div>
+        <div className="row"><div><label style={{ marginTop: 0 }}>Aspek perilaku *</label><input value={x.kelompok} onChange={(e) => set(n, 'kelompok', e.target.value)} placeholder="mis. Komunikasi" /></div>
+          <div style={{ maxWidth: 140 }}><label style={{ marginTop: 0 }}>Skor target</label><select value={String(x.target)} onChange={(e) => set(n, 'target', e.target.value)}>{[1, 2, 3, 4, 5].map((v) => <option key={v} value={v}>{v}</option>)}</select></div></div>
+        <label>Indikator perilaku *</label><input value={x.nama} onChange={(e) => set(n, 'nama', e.target.value)} placeholder="mis. Berkomunikasi secara jelas, sopan, dan tepat waktu" />
+      </div>))}
+    <button type="button" className="btn ghost" disabled={ind.length >= 30} onClick={() => setInd((l) => [...l, BARU_KBI()])}><Ikon n="plus" />Tambah aspek KBI</button>
     <div className="note" style={{ marginTop: 12 }}>Perubahan template berlaku untuk laporan bulan yang belum dibuat. Laporan bulan berjalan dapat diperbarui lewat tombol <b>Muat ulang template</b> di detail KPI karyawan.</div>
     {Math.abs(total - 100) >= 0.01 && (
       <div className="warn kp-bobot-kurang">

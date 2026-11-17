@@ -658,11 +658,13 @@ CREATE TABLE IF NOT EXISTS kpi_template (
 CREATE TABLE IF NOT EXISTS kpi_indikator (
   id          INT AUTO_INCREMENT PRIMARY KEY,
   template_id INT NOT NULL,
+  jenis       ENUM('kpi','kbi') NOT NULL DEFAULT 'kpi',   -- kbi = indikator perilaku (skor 1–5, dinilai atasan, tanpa bobot)
+  kelompok    VARCHAR(150) NOT NULL DEFAULT '',      -- KPI: Objectives · KBI: Aspek perilaku
   nama        VARCHAR(150) NOT NULL,
   deskripsi   VARCHAR(500) NOT NULL DEFAULT '',
   satuan      VARCHAR(30)  NOT NULL DEFAULT '',
   target      DECIMAL(14,2) NOT NULL DEFAULT 0,
-  bobot       DECIMAL(5,2)  NOT NULL DEFAULT 0,      -- persen; total per template = 100
+  bobot       DECIMAL(5,2)  NOT NULL DEFAULT 0,      -- persen; total indikator KPI per template = 100 (KBI: 0)
   arah        ENUM('naik','turun','ya_tidak') NOT NULL DEFAULT 'naik',
   sumber      ENUM('manual','kehadiran','tepat_waktu','utilisasi','log_selesai','log_persen_selesai','log_kelengkapan') NOT NULL DEFAULT 'manual',
   urut        INT NOT NULL DEFAULT 0,
@@ -687,6 +689,10 @@ CREATE TABLE IF NOT EXISTS kpi_lapor (
   status        ENUM('draf','diajukan','disetujui','dikembalikan') NOT NULL DEFAULT 'draf',
   skor          DECIMAL(6,2) NULL,
   predikat      VARCHAR(30) NOT NULL DEFAULT '',
+  skor_kbi      DECIMAL(6,2) NULL,                   -- total skor KBI realisasi ÷ total target (persen)
+  insentif      INT NULL,                            -- insentif KPI bulan itu (rupiah), dari ambang skor KPI
+  skor_tetap    TINYINT(1) NOT NULL DEFAULT 0,       -- 1 = skor diambil dari Recap (migrasi), tidak dihitung ulang
+  sumber_data   VARCHAR(30) NOT NULL DEFAULT '',
   catatan       VARCHAR(1000) NOT NULL DEFAULT '',   -- catatan karyawan saat mengajukan
   catatan_verifikator VARCHAR(1000) NOT NULL DEFAULT '',
   diajukan_at   DATETIME NULL,
@@ -703,6 +709,8 @@ CREATE TABLE IF NOT EXISTS kpi_nilai (
   id          INT AUTO_INCREMENT PRIMARY KEY,
   lapor_id    INT NOT NULL,
   indikator_id INT NULL,
+  jenis       ENUM('kpi','kbi') NOT NULL DEFAULT 'kpi',
+  kelompok    VARCHAR(150) NOT NULL DEFAULT '',
   nama        VARCHAR(150) NOT NULL,
   deskripsi   VARCHAR(500) NOT NULL DEFAULT '',
   satuan      VARCHAR(30)  NOT NULL DEFAULT '',
@@ -714,7 +722,7 @@ CREATE TABLE IF NOT EXISTS kpi_nilai (
   realisasi   DECIMAL(14,2) NULL,
   bukti       VARCHAR(1000) NOT NULL DEFAULT '',     -- tautan bukti (Drive, foto, laporan)
   keterangan  VARCHAR(500) NOT NULL DEFAULT '',
-  pencapaian  DECIMAL(6,2) NULL,                     -- persen, dibatasi 0..120
+  pencapaian  DECIMAL(6,2) NULL,                     -- persen; KPI dibatasi 0..100, KBI = realisasi ÷ target
   INDEX (lapor_id),
   CONSTRAINT fk_kpi_nilai_lapor FOREIGN KEY (lapor_id) REFERENCES kpi_lapor(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

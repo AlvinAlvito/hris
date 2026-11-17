@@ -91,3 +91,7 @@
   .kp-angka>div{flex:1 1 45%}
   .kp-kepala{flex-direction:column-reverse}
 }
+/* bagian KPI & KBI dalam satu lembar */
+.kp-sub{display:flex;align-items:center;gap:6px;margin:16px 0 4px;font-size:.95rem;flex-wrap:wrap}
+.kp-grup{margin:10px 0 2px;color:var(--muted)}
+.kp-skor.besar small{white-space:nowrap}

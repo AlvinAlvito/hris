@@ -1,6 +1,7 @@
-/* KPI: pencarian template per karyawan, pembuatan laporan bulanan (salinan target & bobot), indikator otomatis dari absensi,
-   serta perhitungan pencapaian, skor, dan predikat. */
+/* KPI & KBI: pencarian template per karyawan, pembuatan laporan bulanan (salinan target & bobot), indikator otomatis dari absensi,
+   serta perhitungan pencapaian, skor KPI, skor KBI, predikat, dan insentif. Realisasi diisi atasan / HC, diverifikasi atasan. */
 import { exec, q, q1, sisipkan, type Baris } from './db';
+import { setg } from './pengaturan';
 import { gagal } from './http';
 import { hitungStatus, statusHarian } from './statusHarian';
 import { tglWIB } from './waktu';
@@ -10,7 +11,7 @@ export const POLA_PERIODE = /^\d{4}-(0[1-9]|1[0-2])$/;
 export const SUMBER_ABSEN = ['kehadiran', 'tepat_waktu'];
 export const SUMBER_LOG = ['utilisasi', 'log_selesai', 'log_persen_selesai', 'log_kelengkapan'];
 export const SUMBER_OTOMATIS = [...SUMBER_ABSEN, ...SUMBER_LOG];
-export const LABEL_SUMBER: Record<string, string> = { manual: 'Diisi karyawan', kehadiran: 'Otomatis: % kehadiran', tepat_waktu: 'Otomatis: % tepat waktu',
+export const LABEL_SUMBER: Record<string, string> = { manual: 'Diisi atasan / HC', kehadiran: 'Otomatis: % kehadiran', tepat_waktu: 'Otomatis: % tepat waktu',
   utilisasi: 'Otomatis: % utilisasi beban kerja (log kerja)', log_selesai: 'Otomatis: jumlah pekerjaan selesai (log kerja)',
   log_persen_selesai: 'Otomatis: % pekerjaan selesai (log kerja)', log_kelengkapan: 'Otomatis: % hari kerja yang terisi log' };
 export const SATUAN_SUMBER: Record<string, string> = { kehadiran: '%', tepat_waktu: '%', utilisasi: '%', log_selesai: 'pekerjaan', log_persen_selesai: '%', log_kelengkapan: '%' };
@@ -20,16 +21,39 @@ export function predikat(skor: number | null): string {
   if (skor == null) return '';
   return skor >= 100 ? 'Sangat Baik' : skor >= 90 ? 'Baik' : skor >= 75 ? 'Cukup' : 'Perlu Perbaikan';
 }
-/* pencapaian satu indikator dalam persen, dibatasi 0..120 agar satu indikator tidak menutupi yang lain */
-export function pencapaian(arah: string, target: number, realisasi: number | null, sumber = 'manual'): number | null {
+/* pencapaian satu indikator dalam persen.
+   KPI dibatasi 0..100 (keputusan HC, sama dengan rekap KPI manual): melampaui target tidak menambah nilai.
+   KBI (perilaku, skor 1–5) = realisasi ÷ target tanpa batas atas, seperti tracker KBI manual. */
+export function pencapaian(arah: string, target: number, realisasi: number | null, _sumber = 'manual', jenis = 'kpi'): number | null {
   if (realisasi == null || !Number.isFinite(realisasi)) return null;
+  if (jenis === 'kbi') return target > 0 ? Math.round(Math.min(999, (realisasi / target) * 100) * 100) / 100 : null;
   let p: number;
   if (arah === 'ya_tidak') p = realisasi >= 1 ? 100 : 0;
-  else if (arah === 'turun') p = realisasi <= 0 ? 120 : target <= 0 ? 0 : (target / realisasi) * 100;
+  else if (arah === 'turun') p = realisasi <= 0 ? 100 : target <= 0 ? 0 : (target / realisasi) * 100;
   else p = target <= 0 ? 100 : (realisasi / target) * 100;
-  // utilisasi beban kerja: kerja berlebih (overload) tidak diberi nilai tambah agar tidak mendorong lembur berlebihan
-  const maks = sumber === 'utilisasi' ? 100 : 120;
-  return Math.round(Math.max(0, Math.min(maks, p)) * 100) / 100;
+  return Math.round(Math.max(0, Math.min(100, p)) * 100) / 100;
+}
+/* skor KBI bulan itu: total skor realisasi ÷ total skor target (rumus tracker KBI manual) */
+export function skorKbi(nilai: Baris[]): number | null {
+  const terisi = nilai.filter((x) => x.jenis === 'kbi' && x.realisasi != null && Number(x.target) > 0);
+  if (!terisi.length) return null;
+  const t = terisi.reduce((a, x) => a + Number(x.target), 0), r = terisi.reduce((a, x) => a + Number(x.realisasi), 0);
+  return Math.round((r / t) * 10000) / 100;
+}
+/* insentif KPI per bulan dari ambang skor KPI (rekap manual HC). Bisa diubah lewat pengaturan 'kpi_insentif' (JSON [[ambang, rupiah], ...]). */
+export const INSENTIF_BAWAAN: [number, number][] = [[100, 1000000], [90, 800000], [80, 600000], [60, 400000]];
+export async function ambangInsentif(): Promise<[number, number][]> {
+  try {
+    const a = JSON.parse(await setg('kpi_insentif', ''));
+    if (Array.isArray(a) && a.every((x) => Array.isArray(x) && x.length === 2 && x.every((y: unknown) => Number.isFinite(Number(y)))))
+      return a.map((x) => [Number(x[0]), Number(x[1])] as [number, number]).sort((p, q2) => q2[0] - p[0]);
+  } catch { /* pakai bawaan */ }
+  return INSENTIF_BAWAAN;
+}
+export function hitungInsentif(skor: number | null, ambang: [number, number][]): number | null {
+  if (skor == null) return null;
+  for (const [batas, rp] of ambang) if (skor >= batas - 0.005) return rp;
+  return 0;
 }
 export function periodeKini(): string { return tglWIB().slice(0, 7); }
 export function cekPeriode(p: string): string {
@@ -86,7 +110,7 @@ export async function salinIndikator(laporId: number, templateId: number) {
   await exec('DELETE FROM kpi_nilai WHERE lapor_id=?', [laporId]);
   for (const x of await q('SELECT * FROM kpi_indikator WHERE template_id=? ORDER BY urut, id', [templateId])) {
     const l = lama.get(x.id);
-    await sisipkan('kpi_nilai', { lapor_id: laporId, indikator_id: x.id, nama: x.nama, deskripsi: x.deskripsi, satuan: x.satuan, target: x.target, bobot: x.bobot,
+    await sisipkan('kpi_nilai', { lapor_id: laporId, indikator_id: x.id, jenis: x.jenis, kelompok: x.kelompok, nama: x.nama, deskripsi: x.deskripsi, satuan: x.satuan, target: x.target, bobot: x.bobot,
       arah: x.arah, sumber: x.sumber, urut: x.urut, realisasi: l?.realisasi ?? null, bukti: l?.bukti ?? '', keterangan: l?.keterangan ?? '' });
   }
 }
@@ -94,7 +118,7 @@ export async function salinIndikator(laporId: number, templateId: number) {
 /* hitung ulang indikator otomatis (selama belum final), pencapaian, dan skor */
 export async function segarkanLapor(laporId: number): Promise<void> {
   const l = await q1('SELECT * FROM kpi_lapor WHERE id=?', [laporId]);
-  if (!l) return;
+  if (!l || Number(l.skor_tetap) === 1) return;   // skor hasil migrasi Recap tidak dihitung ulang
   const nilai = await q('SELECT * FROM kpi_nilai WHERE lapor_id=?', [laporId]);
   if (l.status !== 'disetujui' && nilai.some((x) => SUMBER_OTOMATIS.includes(x.sumber))) {
     const u = await q1('SELECT * FROM users WHERE id=?', [l.user_id]);
@@ -107,15 +131,17 @@ export async function segarkanLapor(laporId: number): Promise<void> {
   // tidak dihitung dan bobotnya terbagi ke indikator lain; indikator manual yang kosong membuat skor "sementara".
   let jumlah = 0, bobotTerisi = 0;
   for (const x of nilai) {
-    const p = pencapaian(x.arah, Number(x.target), x.realisasi == null ? null : Number(x.realisasi), x.sumber);
+    const p = pencapaian(x.arah, Number(x.target), x.realisasi == null ? null : Number(x.realisasi), x.sumber, x.jenis);
     await exec('UPDATE kpi_nilai SET realisasi=?, pencapaian=? WHERE id=?', [x.realisasi, p, x.id]);
-    if (p != null) { jumlah += p * Number(x.bobot); bobotTerisi += Number(x.bobot); }
+    if (p != null && x.jenis !== 'kbi') { jumlah += p * Number(x.bobot); bobotTerisi += Number(x.bobot); }
   }
+  const kpi = nilai.filter((x) => x.jenis !== 'kbi');
   const lengkap = nilai.every((x) => x.sumber !== 'manual' || x.realisasi != null);
-  // belum ada satu pun isian karyawan: skor belum bermakna (jangan tampilkan angka dari indikator otomatis saja)
-  const adaManual = nilai.some((x) => x.sumber === 'manual' && x.realisasi != null) || !nilai.some((x) => x.sumber === 'manual');
+  // belum ada satu pun isian manual: skor belum bermakna (jangan tampilkan angka dari indikator otomatis saja)
+  const adaManual = kpi.some((x) => x.sumber === 'manual' && x.realisasi != null) || !kpi.some((x) => x.sumber === 'manual');
   const skor = bobotTerisi > 0 && adaManual ? Math.round((jumlah / bobotTerisi) * 100) / 100 : null;
-  await exec('UPDATE kpi_lapor SET skor=?, predikat=? WHERE id=?', [skor, lengkap ? predikat(skor) : '', laporId]);
+  const kbi = skorKbi(nilai), insentif = lengkap ? hitungInsentif(skor, await ambangInsentif()) : null;
+  await exec('UPDATE kpi_lapor SET skor=?, predikat=?, skor_kbi=?, insentif=? WHERE id=?', [skor, lengkap ? predikat(skor) : '', kbi, insentif, laporId]);
 }
 
 /* data lengkap satu laporan untuk ditampilkan */
@@ -128,8 +154,9 @@ export async function detailLapor(laporId: number) {
     id: l.id, userId: l.user_id, nama: l.nama, nik: l.nik, jabatan: l.jabatan, dept: l.dept, foto: l.foto_profil ? '/uploads/avatar/' + l.foto_profil : '',
     periode: l.periode, template: l.template_nama, templateId: l.template_id, status: l.status, statusLabel: LABEL_STATUS[l.status],
     skor: l.skor == null ? null : Number(l.skor), predikat: l.predikat, lengkap, catatan: l.catatan, catatanVerifikator: l.catatan_verifikator,
+    skorKbi: l.skor_kbi == null ? null : Number(l.skor_kbi), insentif: l.insentif == null ? null : Number(l.insentif), skorTetap: Number(l.skor_tetap) === 1, sumberData: l.sumber_data,
     diajukan: l.diajukan_at, diverifikasiOleh: l.diverifikasi_oleh, diverifikasi: l.diverifikasi_at,
-    nilai: nilai.map((x) => ({ id: x.id, nama: x.nama, deskripsi: x.deskripsi, satuan: x.satuan, target: Number(x.target), bobot: Number(x.bobot), arah: x.arah,
+    nilai: nilai.map((x) => ({ id: x.id, jenis: x.jenis, kelompok: x.kelompok, nama: x.nama, deskripsi: x.deskripsi, satuan: x.satuan, target: Number(x.target), bobot: Number(x.bobot), arah: x.arah,
       sumber: x.sumber, sumberLabel: LABEL_SUMBER[x.sumber], realisasi: x.realisasi == null ? null : Number(x.realisasi), bukti: x.bukti, keterangan: x.keterangan,
       pencapaian: x.pencapaian == null ? null : Number(x.pencapaian) })),
   };
@@ -146,6 +173,7 @@ export async function simpanIsian(laporId: number, isian: unknown, bolehTarget: 
     if (x.sumber === 'manual' && 'realisasi' in raw) {
       const v = raw.realisasi === '' || raw.realisasi == null ? null : Number(String(raw.realisasi).replace(',', '.'));
       if (v != null && (!Number.isFinite(v) || v < 0 || v > 1e12)) gagal(`Realisasi "${x.nama}" tidak valid`);
+      if (v != null && x.jenis === 'kbi' && (v < 1 || v > 5)) gagal(`Skor KBI "${x.nama}" harus 1 sampai 5`);
       ubah.realisasi = x.arah === 'ya_tidak' && v != null ? (v >= 1 ? 1 : 0) : v;
     }
     if ('bukti' in raw) {
@@ -157,6 +185,7 @@ export async function simpanIsian(laporId: number, isian: unknown, bolehTarget: 
     if (bolehTarget && 'target' in raw && x.arah !== 'ya_tidak' && x.sumber === 'manual') {
       const t = Number(String(raw.target).replace(',', '.'));
       if (!Number.isFinite(t) || t <= 0) gagal(`Target "${x.nama}" harus lebih dari 0`);
+      if (x.jenis === 'kbi' && (t < 1 || t > 5)) gagal(`Target KBI "${x.nama}" harus 1 sampai 5`);
       ubah.target = t;
     }
     const k = Object.keys(ubah);

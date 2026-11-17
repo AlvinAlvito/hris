@@ -1,5 +1,5 @@
 'use client';
-/* KPI Saya: target & realisasi bulanan, pengajuan ke atasan, dan riwayat skor 12 bulan */
+/* KPI Saya: KPI & KBI bulanan (diisi atasan / HC, diverifikasi atasan) dan riwayat skor 12 bulan — hanya dilihat karyawan */
 import { useCallback, useEffect, useState } from 'react';
 import { useAplikasi } from '@/components/Aplikasi';
 import { Ikon } from '@/components/Ikon';
@@ -29,10 +29,11 @@ export default function KpiSaya() {
       </div>
       <div className="card"><h3><Ikon n="info" />Cara Penilaian</h3>
         <ul className="kp-cara">
-          <li><b>Pencapaian</b> = realisasi ÷ target (untuk indikator "makin kecil makin baik": target ÷ realisasi), maksimal 120%.</li>
+          <li><b>Pencapaian KPI</b> = realisasi ÷ target (untuk indikator "makin kecil makin baik": target ÷ realisasi), maksimal 100%.</li>
           <li><b>Skor KPI</b> = rata-rata pencapaian sesuai bobot tiap indikator.</li>
-          <li>Predikat: <b>≥ 100</b> Sangat Baik · <b>90–99</b> Baik · <b>75–89</b> Cukup · <b>&lt; 75</b> Perlu Perbaikan.</li>
-          <li>Isi realisasi dan lampirkan bukti, lalu <b>Ajukan ke Atasan</b>. Skor menjadi final setelah disetujui atasan / HC.</li>
+          <li><b>Skor KBI</b> (perilaku) = total skor realisasi ÷ total skor target, skala 1–5 per aspek.</li>
+          <li>Predikat KPI: <b>≥ 100</b> Sangat Baik · <b>90–99</b> Baik · <b>75–89</b> Cukup · <b>&lt; 75</b> Perlu Perbaikan.</li>
+          <li>KPI & KBI diisi oleh <b>atasan / HC</b>, lalu diverifikasi atasan. Nilai menjadi final setelah disetujui.</li>
         </ul>
       </div>
     </div>

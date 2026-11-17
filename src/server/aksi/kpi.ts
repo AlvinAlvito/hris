@@ -1,9 +1,11 @@
-/* KPI: karyawan melapor realisasi bulanan → Supervisor (timnya) / HC memverifikasi; HC mengelola template per jabatan */
+/* KPI & KBI: atasan / HC mengisi realisasi bulanan → atasan memverifikasi (arahan HC 17 Nov 2026); HC mengelola template,
+   recap KPI–KBI–insentif per bulan. Karyawan hanya melihat KPI-nya. */
 import { exec, q, q1, sisipkan, type Baris } from '@/lib/db';
 import { gagal, i, s } from '@/lib/http';
 import { cakupanTim, inList, isAdminUp, labelPenyetuju, logAksi, need, pastikanDalamCakupan, type User } from '@/lib/aturan';
 import { beriTahu, penyetujuUntuk } from '@/lib/notifikasi';
-import { cekPeriode, detailLapor, jabatanTemplate, pastikanLapor, periodeKini, predikat, salinIndikator, segarkanLapor, simpanIsian, SATUAN_SUMBER, SUMBER_OTOMATIS, templateUntuk } from '@/lib/kpi';
+import { ambangInsentif, cekPeriode, detailLapor, INSENTIF_BAWAAN, jabatanTemplate, pastikanLapor, periodeKini, predikat, salinIndikator, segarkanLapor, simpanIsian, SATUAN_SUMBER, SUMBER_OTOMATIS, templateUntuk } from '@/lib/kpi';
+import { setSetting } from '@/lib/pengaturan';
 import type { KumpulanAksi } from '../daftar';
 
 const NAMA_BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
@@ -21,6 +23,27 @@ async function bolehLihat(u: User, pemilik: number) {
   if (ids !== null && !ids.includes(pemilik)) gagal('Karyawan ini bukan anggota tim Anda', 403);
 }
 
+/* atasan penilai: atasan (Supervisor) atau direktur pada rantai atasan karyawan. Bila tidak ada, HC yang memverifikasi. */
+async function atasanPenilai(uid: number): Promise<number[]> {
+  const semua = await q('SELECT id, atasan_id, role, aktif FROM users');
+  const peta = new Map(semua.map((x) => [x.id as number, x]));
+  const hasil: number[] = [];
+  for (let a = peta.get(uid)?.atasan_id, n = 0; a && n < 50; a = peta.get(a)?.atasan_id, n++) {
+    const x = peta.get(a);
+    if (x && x.aktif === 1 && (x.role === 'atasan' || x.role === 'direktur') && x.id !== uid) hasil.push(x.id);
+  }
+  return hasil;
+}
+async function bolehSetujui(u: User, pemilik: number): Promise<boolean> {
+  if (pemilik === u.id) return false;
+  const p = await atasanPenilai(pemilik);
+  return p.length ? p.includes(u.id) : isAdminUp(u);
+}
+async function penerimaVerifikasi(pemilik: number): Promise<number[]> {
+  const p = await atasanPenilai(pemilik);
+  return p.length ? p.slice(0, 1) : (await q("SELECT id FROM users WHERE aktif=1 AND role IN ('admin','direktur')")).map((x) => x.id as number);
+}
+
 export const aksiKpi: KumpulanAksi = {
   /* ================= KARYAWAN ================= */
   async kpi_saya(m) {
@@ -35,21 +58,10 @@ export const aksiKpi: KumpulanAksi = {
     return { kosong: false, periode, lapor: await detailLapor(l.id), riwayat: await ambilRiwayat() };
   },
 
-  async kpi_simpan(m) {
-    const u = await need();
-    const l = await laporAda(i(m, 'id'));
-    if (l.user_id !== u.id) gagal('Ini bukan laporan KPI Anda', 403);
-    if (!['draf', 'dikembalikan'].includes(l.status)) gagal('Laporan sudah diajukan dan sedang diverifikasi');
-    await simpanIsian(l.id, m.nilai, false);
-    await exec('UPDATE kpi_lapor SET catatan=? WHERE id=?', [s(m, 'catatan').slice(0, 1000), l.id]);
-    await segarkanLapor(l.id);
-    if (!m.ajukan) return { pesan: 'Draf KPI tersimpan' };
-    const kosong = await q("SELECT nama FROM kpi_nilai WHERE lapor_id=? AND sumber='manual' AND realisasi IS NULL", [l.id]);
-    if (kosong.length) gagal('Isi realisasi semua indikator dulu: ' + kosong.map((x) => x.nama).join(', '));
-    await exec("UPDATE kpi_lapor SET status='diajukan', diajukan_at=NOW() WHERE id=?", [l.id]);
-    await logAksi(u.id, 'ajukan_kpi', l.periode);
-    await beriTahu(penyetujuUntuk(u.id), { jenis: 'kpi', tautan: '/kelola-kpi', judul: `Laporan KPI dari ${u.nama}`, isi: `KPI ${bulanTeks(l.periode)} menunggu verifikasi Anda.` });
-    return { pesan: 'KPI diajukan, menunggu verifikasi atasan' };
+  /* karyawan tidak lagi mengisi sendiri: KPI & KBI diisi atasan / HC */
+  async kpi_simpan() {
+    await need();
+    gagal('KPI dan KBI Anda diisi oleh atasan / HC, lalu diverifikasi atasan. Anda dapat melihat hasilnya di halaman ini.', 403);
   },
 
   /* ================= SUPERVISOR (timnya) & HC ================= */
@@ -63,7 +75,8 @@ export const aksiKpi: KumpulanAksi = {
     for (const k of users) {
       const l = lapor.get(k.id), t = l ? null : await templateUntuk(k);
       baris.push({ userId: k.id, nama: k.nama, nik: k.nik, jabatan: k.jabatan, dept: k.dept, laporId: l?.id ?? null, template: l?.template_nama ?? t?.nama ?? '',
-        status: l?.status ?? (t ? 'belum' : 'tanpa'), skor: l?.skor == null ? null : Number(l.skor), predikat: l?.predikat ?? '', diajukan: l?.diajukan_at ?? null });
+        status: l?.status ?? (t ? 'belum' : 'tanpa'), skor: l?.skor == null ? null : Number(l.skor), predikat: l?.predikat ?? '', diajukan: l?.diajukan_at ?? null,
+        skorKbi: l?.skor_kbi == null ? null : Number(l.skor_kbi) });
     }
     const final = baris.filter((x) => x.status === 'disetujui' && x.skor != null);
     return { periode, admin: isAdminUp(u), baris,
@@ -82,7 +95,7 @@ export const aksiKpi: KumpulanAksi = {
     await segarkanLapor(l.id);
     const riwayat = (await q('SELECT periode, skor, predikat, status FROM kpi_lapor WHERE user_id=? ORDER BY periode DESC LIMIT 12', [pemilik.id]))
       .map((r) => ({ periode: r.periode, skor: r.skor == null ? null : Number(r.skor), predikat: r.predikat, status: r.status }));
-    return { lapor: await detailLapor(l.id), riwayat, bolehVerifikasi: pemilik.id !== u.id, admin: isAdminUp(u) };
+    return { lapor: await detailLapor(l.id), riwayat, bolehVerifikasi: pemilik.id !== u.id, bolehSetujui: await bolehSetujui(u, pemilik.id), admin: isAdminUp(u) };
   },
 
   async kpi_verifikasi(m) {
@@ -90,32 +103,47 @@ export const aksiKpi: KumpulanAksi = {
     const l = await laporAda(i(m, 'id'));
     await pastikanDalamCakupan(u, l.user_id);
     const keputusan = s(m, 'keputusan', 'simpan');
-    if (!['simpan', 'setujui', 'kembalikan'].includes(keputusan)) gagal('Keputusan tidak sah');
+    if (!['simpan', 'ajukan', 'setujui', 'kembalikan'].includes(keputusan)) gagal('Keputusan tidak sah');
     if (l.status === 'disetujui') gagal('KPI bulan ini sudah final. HC dapat membukanya kembali bila perlu koreksi.');
-    await simpanIsian(l.id, m.nilai, true);
+    const penilai = await bolehSetujui(u, l.user_id);
+    if ((keputusan === 'setujui' || keputusan === 'kembalikan') && !penilai) gagal('Verifikasi KPI dilakukan oleh atasan karyawan ini', 403);
+    if (keputusan !== 'kembalikan') await simpanIsian(l.id, m.nilai, true);
     const catatan = s(m, 'catatan').slice(0, 1000);
     await segarkanLapor(l.id);
     const k = await q1('SELECT id, nama FROM users WHERE id=?', [l.user_id]);
+    const kosongan = async () => {
+      const kosong = await q("SELECT nama FROM kpi_nilai WHERE lapor_id=? AND sumber='manual' AND realisasi IS NULL", [l.id]);
+      if (kosong.length) gagal('Masih ada indikator tanpa realisasi: ' + kosong.map((x) => x.nama).join(', '));
+    };
     if (keputusan === 'simpan') {
-      if (catatan) await exec('UPDATE kpi_lapor SET catatan_verifikator=? WHERE id=?', [catatan, l.id]);
-      return { pesan: 'Perubahan tersimpan' };
+      if (catatan) await exec('UPDATE kpi_lapor SET catatan=? WHERE id=?', [catatan, l.id]);
+      return { pesan: 'Isian KPI tersimpan' };
+    }
+    if (keputusan === 'ajukan') {
+      await kosongan();
+      await exec("UPDATE kpi_lapor SET status='diajukan', diajukan_at=NOW(), catatan=? WHERE id=?", [catatan, l.id]);
+      await logAksi(u.id, 'ajukan_kpi', `${k?.nama} ${l.periode}`);
+      await beriTahu(penerimaVerifikasi(l.user_id), { jenis: 'kpi', tautan: '/kelola-kpi', judul: `KPI ${k?.nama} menunggu verifikasi`, isi: `KPI & KBI ${bulanTeks(l.periode)} sudah diisi ${u.nama}.` });
+      return { pesan: 'KPI diajukan ke atasan untuk diverifikasi' };
     }
     if (keputusan === 'kembalikan') {
-      if (!catatan) gagal('Tuliskan alasan pengembalian agar karyawan tahu yang perlu diperbaiki');
+      if (l.status !== 'diajukan') gagal('Hanya KPI yang sedang diajukan yang bisa dikembalikan');
+      if (!catatan) gagal('Tuliskan apa yang perlu diperbaiki');
       await exec("UPDATE kpi_lapor SET status='dikembalikan', catatan_verifikator=?, diverifikasi_oleh=?, diverifikasi_at=NOW() WHERE id=?", [catatan, labelPenyetuju(u), l.id]);
       await logAksi(u.id, 'kembalikan_kpi', `${k?.nama} ${l.periode}`);
-      await beriTahu([l.user_id], { jenis: 'kpi', tautan: '/kpi', judul: `KPI ${bulanTeks(l.periode)} dikembalikan`, isi: catatan.slice(0, 200) });
-      return { pesan: 'KPI dikembalikan ke karyawan untuk diperbaiki' };
+      await beriTahu((await q("SELECT id FROM users WHERE aktif=1 AND role='admin'")).map((x) => x.id as number),
+        { jenis: 'kpi', tautan: '/kelola-kpi', judul: `KPI ${k?.nama} ${bulanTeks(l.periode)} dikembalikan`, isi: catatan.slice(0, 200) });
+      return { pesan: 'KPI dikembalikan untuk diperbaiki' };
     }
-    const kosong = await q("SELECT nama FROM kpi_nilai WHERE lapor_id=? AND sumber='manual' AND realisasi IS NULL", [l.id]);
-    if (kosong.length) gagal('Masih ada indikator tanpa realisasi: ' + kosong.map((x) => x.nama).join(', '));
-    const f = await q1('SELECT skor FROM kpi_lapor WHERE id=?', [l.id]);
+    await kosongan();
+    const f = await q1('SELECT skor, skor_kbi FROM kpi_lapor WHERE id=?', [l.id]);
     const skor = Number(f?.skor ?? 0);
     await exec("UPDATE kpi_lapor SET status='disetujui', predikat=?, catatan_verifikator=?, diverifikasi_oleh=?, diverifikasi_at=NOW(), diajukan_at=IFNULL(diajukan_at,NOW()) WHERE id=?",
       [predikat(skor), catatan, labelPenyetuju(u), l.id]);
     await logAksi(u.id, 'setujui_kpi', `${k?.nama} ${l.periode} skor ${skor}`);
-    await beriTahu([l.user_id], { jenis: 'kpi', tautan: '/kpi', judul: `KPI ${bulanTeks(l.periode)} disetujui`, isi: `Skor ${skor.toFixed(1)} · ${predikat(skor)}` });
-    return { pesan: `KPI disetujui · skor ${skor.toFixed(1)} (${predikat(skor)})` };
+    const kbiTeks = f?.skor_kbi == null ? '' : ` · KBI ${Number(f.skor_kbi).toFixed(1)}`;
+    await beriTahu([l.user_id], { jenis: 'kpi', tautan: '/kpi', judul: `KPI ${bulanTeks(l.periode)} disetujui`, isi: `KPI ${skor.toFixed(1)} · ${predikat(skor)}${kbiTeks}` });
+    return { pesan: `KPI disetujui · skor ${skor.toFixed(1)} (${predikat(skor)})${kbiTeks}` };
   },
 
   /* HC: buka kembali KPI final untuk koreksi, atau muat ulang indikator dari template terbaru */
@@ -157,7 +185,7 @@ export const aksiKpi: KumpulanAksi = {
     };
     return {
       template: t.map((x) => ({ id: x.id, nama: x.nama, keterangan: x.keterangan, aktif: !!x.aktif, jabatan: jabatanTemplate(x), jumlahKaryawan: cocok(x),
-        indikator: ind.filter((y) => y.template_id === x.id).map((y) => ({ id: y.id, nama: y.nama, deskripsi: y.deskripsi, satuan: y.satuan, target: Number(y.target),
+        indikator: ind.filter((y) => y.template_id === x.id).map((y) => ({ id: y.id, jenis: y.jenis, kelompok: y.kelompok, nama: y.nama, deskripsi: y.deskripsi, satuan: y.satuan, target: Number(y.target),
           bobot: Number(y.bobot), arah: y.arah, sumber: y.sumber })) })),
       jabatan, karyawan: users.map((x) => ({ id: x.id, nama: x.nama, jabatan: x.jabatan, dept: x.dept, templateKhusus: tugas.find((p) => p.user_id === x.id)?.template_id ?? null })),
     };
@@ -169,9 +197,18 @@ export const aksiKpi: KumpulanAksi = {
     if (nama.length < 3) gagal('Nama template wajib diisi');
     const jabatan = (Array.isArray(m.jabatan) ? m.jabatan : []).map((x: unknown) => String(x).trim()).filter(Boolean);
     const ind = Array.isArray(m.indikator) ? m.indikator as Baris[] : [];
-    if (!ind.length) gagal('Tambahkan minimal satu indikator');
-    if (ind.length > 15) gagal('Maksimal 15 indikator per template');
+    if (!ind.some((x) => x.jenis !== 'kbi')) gagal('Tambahkan minimal satu indikator KPI');
+    if (ind.length > 30) gagal('Maksimal 30 indikator (KPI + KBI) per template');
     const bersih = ind.map((x, n) => {
+      const kelompok = String(x.kelompok ?? '').trim().slice(0, 150);
+      if (x.jenis === 'kbi') {
+        // KBI: skor perilaku 1–5, diisi atasan, tanpa bobot
+        const namaInd = String(x.nama ?? '').trim(), target = Number(x.target);
+        if (!namaInd) gagal(`Nama indikator KBI ke-${n + 1} wajib diisi`);
+        if (!Number.isFinite(target) || target < 1 || target > 5) gagal(`Skor target KBI "${namaInd}" harus 1 sampai 5`);
+        return { id: Number(x.id) || 0, jenis: 'kbi', kelompok, nama: namaInd.slice(0, 150), deskripsi: String(x.deskripsi ?? '').trim().slice(0, 500), satuan: 'skor',
+          target, bobot: 0, arah: 'naik', sumber: 'manual', urut: n };
+      }
       const sumber = ['manual', ...SUMBER_OTOMATIS].includes(x.sumber) ? x.sumber : 'manual';
       const arah = SUMBER_OTOMATIS.includes(sumber) ? 'naik' : ['naik', 'turun', 'ya_tidak'].includes(x.arah) ? x.arah : 'naik';
       const namaInd = String(x.nama ?? '').trim();
@@ -180,11 +217,11 @@ export const aksiKpi: KumpulanAksi = {
       const bobot = Number(x.bobot), target = arah === 'ya_tidak' ? 1 : ['kehadiran', 'tepat_waktu'].includes(sumber) ? 100 : Number(x.target);
       if (!Number.isFinite(bobot) || bobot <= 0) gagal(`Bobot "${namaInd}" harus lebih dari 0`);
       if (!Number.isFinite(target) || target <= 0) gagal(`Target "${namaInd}" harus lebih dari 0`);
-      return { id: Number(x.id) || 0, nama: namaInd.slice(0, 150), deskripsi: String(x.deskripsi ?? '').trim().slice(0, 500),
+      return { id: Number(x.id) || 0, jenis: 'kpi', kelompok, nama: namaInd.slice(0, 150), deskripsi: String(x.deskripsi ?? '').trim().slice(0, 500),
         satuan: SUMBER_OTOMATIS.includes(sumber) ? SATUAN_SUMBER[sumber] : arah === 'ya_tidak' ? 'ya/tidak' : String(x.satuan ?? '').trim().slice(0, 30), target, bobot, arah, sumber, urut: n };
     });
-    const total = bersih.reduce((a, x) => a + x.bobot, 0);
-    if (Math.abs(total - 100) > 0.01) gagal(`Total bobot harus 100% (sekarang ${Math.round(total * 100) / 100}%)`);
+    const total = bersih.filter((x) => x.jenis === 'kpi').reduce((a, x) => a + x.bobot, 0);
+    if (Math.abs(total - 100) > 0.01) gagal(`Total bobot indikator KPI harus 100% (sekarang ${Math.round(total * 100) / 100}%)`);
     const data = { nama: nama.slice(0, 120), jabatan: JSON.stringify(jabatan), keterangan: s(m, 'keterangan').slice(0, 500), aktif: m.aktif === false ? 0 : 1 };
     let tid = id;
     if (id) {
@@ -194,7 +231,7 @@ export const aksiKpi: KumpulanAksi = {
     const lama = (await q('SELECT id FROM kpi_indikator WHERE template_id=?', [tid])).map((x) => x.id as number);
     const dipakai = new Set<number>();
     for (const x of bersih) {
-      const isi = { nama: x.nama, deskripsi: x.deskripsi, satuan: x.satuan, target: x.target, bobot: x.bobot, arah: x.arah, sumber: x.sumber, urut: x.urut };
+      const isi = { jenis: x.jenis, kelompok: x.kelompok, nama: x.nama, deskripsi: x.deskripsi, satuan: x.satuan, target: x.target, bobot: x.bobot, arah: x.arah, sumber: x.sumber, urut: x.urut };
       if (x.id && lama.includes(x.id)) { await exec(`UPDATE kpi_indikator SET ${Object.keys(isi).map((c) => `${c}=:${c}`).join(',')} WHERE id=:__id`, { ...isi, __id: x.id }); dipakai.add(x.id); }
       else await sisipkan('kpi_indikator', { ...isi, template_id: tid });
     }
@@ -211,6 +248,35 @@ export const aksiKpi: KumpulanAksi = {
     await exec('DELETE FROM kpi_template WHERE id=?', [t.id]);   // laporan lama tetap utuh (indikator sudah disalin)
     await logAksi(u.id, 'hapus_template_kpi', t.nama);
     return { pesan: 'Template dihapus. Laporan KPI bulan-bulan sebelumnya tetap tersimpan.' };
+  },
+
+  /* Recap KPI, KBI, insentif per karyawan per bulan (tahun KPI Juli–Juni), seperti sheet Recap manual HC */
+  async kpi_recap(m) {
+    await need(['admin']);
+    const kini = periodeKini(), [th, bl] = kini.split('-').map(Number);
+    const awalTh = Number(s(m, 'tahun')) || (bl >= 7 ? th : th - 1);
+    if (awalTh < 2020 || awalTh > 2100) gagal('Tahun tidak sah');
+    const bulan: string[] = [];
+    for (let n = 0; n < 12; n++) { const b = 7 + n, y = awalTh + Math.floor((b - 1) / 12), mm = ((b - 1) % 12) + 1; bulan.push(`${y}-${String(mm).padStart(2, '0')}`); }
+    const lapor = await q(`SELECT l.user_id, l.periode, l.skor, l.skor_kbi, l.insentif, l.status, l.sumber_data FROM kpi_lapor l WHERE l.periode BETWEEN ? AND ?`, [bulan[0], bulan[11]]);
+    const ids = [...new Set(lapor.map((x) => x.user_id as number))];
+    const users = await q(`SELECT id, nik, nama, dept, jabatan, aktif FROM users WHERE role<>'direktur' AND (aktif=1${ids.length ? ` OR id IN (${inList(ids)})` : ''}) ORDER BY dept, nama`);
+    const per = new Map<string, Baris>(lapor.map((x) => [x.user_id + '|' + x.periode, x]));
+    const angka = (v: unknown) => (v == null ? null : Number(v));
+    return { tahun: awalTh, bulan, ambang: await ambangInsentif(),
+      baris: users.map((u) => ({ userId: u.id, nik: u.nik, nama: u.nama, divisi: u.dept, jabatan: u.jabatan, aktif: u.aktif === 1,
+        bulan: Object.fromEntries(bulan.map((p) => { const x = per.get(u.id + '|' + p); return [p, x ? { kpi: angka(x.skor), kbi: angka(x.skor_kbi), insentif: angka(x.insentif), status: x.status, migrasi: x.sumber_data === 'migrasi_recap' } : null]; })) })) };
+  },
+  async kpi_insentif_simpan(m) {
+    const u = await need(['admin']);
+    const a = Array.isArray(m.ambang) ? (m.ambang as unknown[]) : [];
+    const bersih = a.map((x) => (Array.isArray(x) ? [Number(x[0]), Math.round(Number(x[1]))] : [NaN, NaN]) as [number, number]);
+    if (!bersih.length || bersih.length > 8 || bersih.some(([b, rp]) => !Number.isFinite(b) || b < 0 || b > 200 || !Number.isFinite(rp) || rp < 0 || rp > 100000000))
+      gagal('Ambang insentif tidak sah');
+    bersih.sort((p, q2) => q2[0] - p[0]);
+    await setSetting('kpi_insentif', JSON.stringify(bersih));
+    await logAksi(u.id, 'ubah_insentif_kpi', JSON.stringify(bersih).slice(0, 200));
+    return { pesan: 'Ambang insentif tersimpan. Berlaku untuk KPI yang belum final; KPI final dihitung ulang bila dibuka kembali.', ambang: bersih, bawaan: INSENTIF_BAWAAN };
   },
 
   async kpi_penugasan_simpan(m) {
