@@ -9,6 +9,7 @@ import { normalisasiNomorWhatsApp } from '@/lib/telepon';
 import { folderPenyimpanan, jalurAman } from '@/lib/berkas';
 import { POLA_TGL, tglWIB } from '@/lib/waktu';
 import { bacaCv, catatRiwayat, kabariHc, kenaliCv, LABEL_TAHAP, LABEL_TIPE, pertanyaanLowongan, picuAntrean, simpanCv, TAHAP, type Tahap } from '@/lib/rekrutmen';
+import { groqJson, KuotaPenuh } from '@/lib/ai/groqJson';
 import type { KumpulanAksi } from '../daftar';
 
 const TIPE = ['tetap', 'kontrak', 'magang', 'freelance', 'paruh_waktu'];
@@ -122,6 +123,36 @@ export const aksiRekrutmen: KumpulanAksi = {
         bulanIni: await n("SELECT COUNT(*) n FROM lamaran WHERE created_at >= DATE_FORMAT(CURDATE(),'%Y-%m-01')"),
         antrean: await n("SELECT COUNT(*) n FROM lamaran WHERE ai_status IN ('antri','proses')"), proses: await n("SELECT COUNT(*) n FROM lamaran WHERE tahap NOT IN ('diterima','ditolak')") },
     };
+  },
+
+  /* Draf kualifikasi wajib dari judul, divisi, lokasi, tipe, dan deskripsi yang sudah diisi HC. Hanya saran: HC tetap meninjau sebelum menyimpan. */
+  async rk_kualifikasi_ai(m) {
+    await need(['admin']);
+    const judul = s(m, 'judul').slice(0, 150), divisi = s(m, 'divisi').slice(0, 100), lokasi = s(m, 'lokasi').slice(0, 100);
+    const deskripsi = s(m, 'deskripsi').slice(0, 3000), tipe = LABEL_TIPE[s(m, 'tipe')] ?? s(m, 'tipe');
+    if (judul.length < 3) gagal('Isi judul posisi dulu agar AI tahu posisi yang dicari');
+    const sistem = `Anda membantu HC Yayasan Pendidikan POSI (Pusat Olimpiade Sains Indonesia, Medan) menyusun lowongan kerja.
+Buat daftar KUALIFIKASI WAJIB untuk posisi yang diberikan, dalam Bahasa Indonesia.
+Aturan:
+- 5 sampai 8 butir, masing-masing satu kalimat pendek (maks. 110 karakter), jelas dan bisa dinilai dari CV (pendidikan, pengalaman, keahlian, alat/aplikasi, kemampuan).
+- Sesuaikan dengan judul, divisi, lokasi, tipe pekerjaan, dan deskripsi. Jangan menambah tugas yang tidak ada di deskripsi.
+- Tipe magang/freelance: jangan mensyaratkan pengalaman panjang.
+- DILARANG syarat diskriminatif: usia, jenis kelamin, agama, suku, status pernikahan, penampilan fisik, tinggi/berat badan.
+- Tanpa penomoran atau tanda butir di awal teks.
+Balas JSON: {"kualifikasi": ["...", "..."]}`;
+    const isi = `Judul posisi: ${judul}
+Divisi: ${divisi || '-'}
+Lokasi: ${lokasi || '-'}
+Tipe pekerjaan: ${tipe || '-'}
+Deskripsi pekerjaan:
+${deskripsi || '-'}`;
+    let hasil: Record<string, unknown>;
+    try { hasil = await groqJson(sistem, isi, 1200); }
+    catch (e) { gagal(e instanceof KuotaPenuh ? 'Layanan AI sedang sibuk, coba lagi dalam 1 menit' : 'AI gagal membuat kualifikasi, coba lagi', 503); }
+    const daftar = (Array.isArray(hasil.kualifikasi) ? hasil.kualifikasi : []).map((x) => String(x ?? '').replace(/^\s*(\d+[.)]|[-•*])\s*/, '').replace(/\s+/g, ' ').trim())
+      .filter((x) => x.length >= 5).slice(0, 8).map((x) => x.slice(0, 200));
+    if (!daftar.length) gagal('AI tidak menghasilkan kualifikasi, coba lagi', 503);
+    return { kualifikasi: daftar };
   },
 
   async rk_lowongan_simpan(m) {

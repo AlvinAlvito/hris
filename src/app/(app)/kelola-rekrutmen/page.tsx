@@ -198,7 +198,8 @@ function DaftarLowongan({ r, segarkan, lihat }: { r: Ringkas; segarkan: () => vo
 }
 
 function FormLowongan({ l, salin, tipe, selesai }: { l: Lowongan | null; salin: boolean; tipe: Record<string, string>; selesai: () => void }) {
-  const { tutupSheet, toast, galat } = useAplikasi();
+  const { tutupSheet, toast, galat, yakin } = useAplikasi();
+  const [buatAi, setBuatAi] = useState(false);
   const [v, setV] = useState({ judul: (l?.judul ?? '') + (salin ? ' (salinan)' : ''), divisi: l?.divisi ?? '', lokasi: l?.lokasi ?? '', tipe: l?.tipe ?? 'kontrak',
     deskripsi: l?.deskripsi ?? '', kualifikasi: l?.kualifikasiTeks ?? '', nilaiPlus: l?.nilaiPlusTeks ?? '', pertanyaan: (l?.pertanyaan ?? []).join('\n'),
     kuota: l?.kuota ?? 1, batas: salin ? '' : l?.batas ?? '', status: salin ? 'draf' : l?.status ?? 'draf' });
@@ -209,6 +210,15 @@ function FormLowongan({ l, salin, tipe, selesai }: { l: Lowongan | null; salin: 
     api<{ pesan: string }>('rk_lowongan_simpan', { ...v, status: status ?? v.status, id: salin ? 0 : l?.id ?? 0, kuota: +v.kuota })
       .then((x) => { tutupSheet(); toast(x.pesan); selesai(); }).catch((e) => { galat(e); setKirim(false); });
   };
+  // draf kualifikasi wajib dari isian di atasnya; HC tetap meninjau & mengubahnya sebelum menyimpan
+  const kualifikasiAi = async () => {
+    if (v.judul.trim().length < 3) { toast('Isi judul posisi dulu', true); return; }
+    if (v.kualifikasi.trim() && !(await yakin('Ganti kualifikasi wajib?', 'Isi kualifikasi yang sekarang akan diganti dengan saran AI.', { ya: 'Ganti' }))) return;
+    setBuatAi(true);
+    api<{ kualifikasi: string[] }>('rk_kualifikasi_ai', { judul: v.judul, divisi: v.divisi, lokasi: v.lokasi, tipe: v.tipe, deskripsi: v.deskripsi })
+      .then((r) => { setV((x) => ({ ...x, kualifikasi: r.kualifikasi.join('\n') })); toast('Saran AI terisi. Periksa dan sesuaikan sebelum menyimpan.'); })
+      .catch(galat).finally(() => setBuatAi(false));
+  };
   return (<>
     <h3><Ikon n="briefcase" />{l && !salin ? 'Ubah' : 'Buat'} Lowongan</h3>
     <label style={{ marginTop: 0 }}>Judul posisi *</label><input value={v.judul} onChange={set('judul')} placeholder="mis. Staff Akademik Olimpiade" />
@@ -218,7 +228,10 @@ function FormLowongan({ l, salin, tipe, selesai }: { l: Lowongan | null; salin: 
       <div><label>Kuota</label><input type="number" min={1} value={v.kuota} onChange={set('kuota')} /></div>
       <div><label>Batas lamaran</label><input type="date" value={v.batas ?? ''} onChange={set('batas')} /></div></div>
     <label>Deskripsi pekerjaan</label><textarea rows={5} value={v.deskripsi} onChange={set('deskripsi')} placeholder="Tanggung jawab utama, lingkungan kerja, dll." />
-    <label>Kualifikasi wajib * <span className="tiny muted">(satu per baris — dipakai AI untuk menilai CV)</span></label>
+    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+      <label>Kualifikasi wajib * <span className="tiny muted">(satu per baris — dipakai AI untuk menilai CV)</span></label>
+      <button type="button" className="btn ghost sm auto" disabled={buatAi} onClick={kualifikasiAi} title="Dibuat dari judul, divisi, lokasi, tipe, dan deskripsi pekerjaan">
+        <Ikon n="sparkles" />{buatAi ? 'Membuat…' : 'Buat dengan AI'}</button></div>
     <textarea rows={5} value={v.kualifikasi} onChange={set('kualifikasi')} placeholder={'Minimal S1 Pendidikan Matematika / Fisika\nPengalaman mengajar minimal 1 tahun\nMenguasai Microsoft Office'} />
     <label>Nilai tambah <span className="tiny muted">(opsional, satu per baris)</span></label>
     <textarea rows={3} value={v.nilaiPlus} onChange={set('nilaiPlus')} placeholder={'Pernah menjadi peserta / pembina olimpiade sains\nDomisili Medan'} />
