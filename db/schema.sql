@@ -771,6 +771,26 @@ CREATE TABLE IF NOT EXISTS log_komentar (
   CONSTRAINT fk_logkom_log FOREIGN KEY (log_id) REFERENCES log_kerja(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- =====================================================================
+-- Aset: kendaraan operasional (motor / mobil) dan jatuh tempo pajaknya
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS aset_kendaraan (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  jenis       ENUM('motor','mobil') NOT NULL,
+  brand       VARCHAR(60)  NOT NULL,                 -- mis. Toyota, Honda
+  merk        VARCHAR(80)  NOT NULL DEFAULT '',      -- tipe / model, mis. Avanza, Vario 125
+  tahun       SMALLINT NULL,
+  plat        VARCHAR(20)  NOT NULL,
+  tgl_pajak   DATE NULL,                             -- jatuh tempo pajak tahunan berikutnya
+  keterangan  VARCHAR(500) NOT NULL DEFAULT '',
+  aktif       TINYINT(1) NOT NULL DEFAULT 1,
+  dibuat_oleh VARCHAR(150) NOT NULL DEFAULT '',
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_aset_plat (plat),
+  INDEX (tgl_pajak)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS settings (
   k VARCHAR(50) PRIMARY KEY,
   v TEXT
