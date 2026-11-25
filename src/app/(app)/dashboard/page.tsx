@@ -36,10 +36,10 @@ export default function Dashboard() {
   // [ikon, judul, nilai, warna, status yang termasuk (null = semua karyawan); kartu persetujuan membuka menu Persetujuan]
   const kpi: [string, string, string | number, string, string[] | null | 'persetujuan'][] = g ? [
     ['users', 'Karyawan aktif', g.total, '', null], ['circle-check', 'Hadir hari ini', h.hadir + h.telat, 'c-green', ['hadir', 'telat', 'setengah']],
-    ['clock-alert', 'Terlambat', h.telat, 'c-amber', ['telat']], ['plane', 'Cuti / izin', h.cuti + h.ket, 'c-cyan', ['cuti', 'ket']],
+    ['clock-alert', 'Terlambat', h.telat, 'c-amber', ['telat']], ['plane', 'Cuti / izin', h.cutiIzin ?? h.cuti + h.ket, 'c-cyan', ['cuti', 'ket']],
     ['hourglass', 'Belum absen', h.belum, 'c-red', ['belum']], ['inbox', 'Menunggu persetujuan', inbox.total, 'c-gray', 'persetujuan']] : [];
   const rincian = (judul: string, status: string[] | null) =>
-    bukaSheet(<RincianKartu judul={judul} tanggal={g!.tanggal[g!.tanggal.length - 1]} daftar={(g!.orang as Data[]).filter((x) => !status || status.includes(x.status))} semua={!status}
+    bukaSheet(<RincianKartu judul={judul} tanggal={g!.tanggal[g!.tanggal.length - 1]} daftar={(g!.orang as Data[]).filter((x) => !status || status.includes(x.status) || (judul === 'Cuti / izin' && x.izin))} semua={!status}
       kartuTanggal={KARTU_TANGGAL[judul]} />, { besar: true });
   const fotoBesar = (src: string, nama: string) => bukaSheet(<><h3>{nama}</h3><img src={src} alt="" style={{ width: '100%', borderRadius: 14 }} /></>);
 

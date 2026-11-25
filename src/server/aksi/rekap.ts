@@ -83,7 +83,10 @@ export const aksiRekap: KumpulanAksi = {
     const sebaran = new Map<string, number>(), divisi = new Map<string, Record<string, any>>();
     const terlambat: Record<string, any>[] = [], tidakHadir: Record<string, any>[] = [];
     for (const x of users) {
-      const st = peta[x.id]?.[tgl] ?? 'luar', a = abs.get(x.id);
+      const a = abs.get(x.id);
+      let st = peta[x.id]?.[tgl] ?? 'luar';
+      // terlambat dengan izin: payroll & KPI menganggapnya hadir, tetapi ringkasan menampilkannya sebagai terlambat (izin)
+      if (st === 'hadir' && a && a.terlambat === 1 && a.telat_diizinkan === 1 && a.jam_mode !== 'fleksibel' && a.approval !== 'ditolak') st = 'telat';
       n[st] = (n[st] ?? 0) + 1;
       const dv = String(x.dept || '').trim() || 'Tanpa divisi';
       if (!divisi.has(dv)) divisi.set(dv, { nama: dv, total: 0, hadir: 0, telat: 0, tidak: 0 });
