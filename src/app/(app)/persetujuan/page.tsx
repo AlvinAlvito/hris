@@ -44,8 +44,9 @@ export default function Persetujuan() {
     {adaTindakLanjut && <div className="note" style={{ marginTop: 14 }}>
       Angka pada kartu termasuk pengingat dan tindak lanjut di menu lain. Klik kartu <b>Absensi menunggu approval</b> atau <b>Lupa clock out</b> untuk membuka Rekap Absensi, <b>Pengajuan cuti</b> untuk membuka Cuti. Daftar pengajuan yang bisa diputus langsung muncul di panel bawah saat kartunya dipilih.
     </div>}
-    {pilih === 'pengajuan' && <DaftarPengajuan key={'p' + segar} />}
-    {pilih === 'ket' && <DaftarIzin key={'k' + segar} />}
+    {/* tanpa yang menunggu: langsung tampilkan riwayat (semua status) agar atasan bisa melihat pengajuan tim yang sudah diputus */}
+    {pilih === 'pengajuan' && <DaftarPengajuan key={'p' + segar} awal={item.find((x) => x.kunci === 'pengajuan')?.jumlah ? 'Menunggu HR' : 'ALL'} />}
+    {pilih === 'ket' && <DaftarIzin key={'k' + segar} awal={item.find((x) => x.kunci === 'ket')?.jumlah ? 'Menunggu HR' : 'ALL'} />}
   </>);
 }
 
@@ -84,9 +85,9 @@ const Tombol = ({ id, putus, ya = 'Setujui' }: { id: number; putus: (id: number,
     <button className="btn sm red" onClick={() => putus(id, false)}><Ikon n="x" />Tolak</button></div>
 );
 
-function DaftarPengajuan() {
+function DaftarPengajuan({ awal }: { awal: string }) {
   const { me, galat, yakin, toast, muatInbox } = useAplikasi();
-  const [filter, setFilter] = useState('Menunggu HR');
+  const [filter, setFilter] = useState(awal);
   const { list, halaman, page, setPage, search, setSearch, muat } = useDaftar('adm_pengajuan', filter);
   const putus = useKeputusan('adm_pengajuan_putus', muat);
   const hapus = async (x: Data) => {
@@ -97,7 +98,7 @@ function DaftarPengajuan() {
     Hari: tglHari(x.tanggal).split(',')[0], Tanggal: x.tanggal, Jam: x.jamMulai ? x.jamMulai + (x.jamSelesai ? `–${x.jamSelesai}` : '') : '', Sebelum: x.jadwalSebelum, Sesudah: x.jadwalSesudah, Alasan: x.alasan,
     'Waktu Diajukan': String(x.tglAjukan ?? '').slice(0, 16), Status: teksStatus(x.status), 'Diputus Oleh': x.approver, 'Catatan Atasan': x.catatanHr })), 'Pengajuan', 'pengajuan-lembur-absen-' + todayStr())).catch(galat);
   return (
-    <div className="card"><Kepala ikon="clock" judul="Lembur, Lupa Absen & Izin Terlambat" opsi={['Menunggu HR', 'Disetujui', 'Ditolak HR', 'ALL']} filter={filter} setFilter={setFilter} ekspor={ekspor} />
+    <div className="card"><Kepala ikon="clock" judul="Lembur, Lupa Absen, Izin Terlambat & Pulang Awal" opsi={['Menunggu HR', 'Disetujui', 'Ditolak HR', 'ALL']} filter={filter} setFilter={setFilter} ekspor={ekspor} />
       <KontrolDaftar search={search} setSearch={setSearch} />
       {!list ? <div className="skel" style={{ height: 90, marginTop: 12 }} /> : list.length ? <>{list.map((x) => (
         <div key={x.id} className="item">
@@ -113,14 +114,15 @@ function DaftarPengajuan() {
           {x.dibuatOleh && <div className="kv"><span>Dibuat oleh</span><span><span className="badge b-purple">{x.dibuatOleh}</span></span></div>}
           {/^Menunggu/.test(x.status) && x.userId !== me?.id && <Tombol id={x.id} putus={putus} />}
           {isAdminUp(me) && <AksiAdmin hapus={() => hapus(x)} />}
-        </div>))}<NavigasiHalaman page={page} total={halaman?.total ?? 0} totalPages={halaman?.totalPages ?? 1} ubah={setPage} /></> : <div className="empty">Tidak ada pengajuan pada filter ini.</div>}
+        </div>))}<NavigasiHalaman page={page} total={halaman?.total ?? 0} totalPages={halaman?.totalPages ?? 1} ubah={setPage} /></> : <div className="empty">Tidak ada pengajuan pada filter ini.{filter !== 'ALL' && <div style={{ marginTop: 10 }}>
+          <button className="btn ghost sm auto" onClick={() => setFilter('ALL')}><Ikon n="history" />Lihat riwayat tim (semua status)</button></div>}</div>}
     </div>
   );
 }
 
-function DaftarIzin() {
+function DaftarIzin({ awal }: { awal: string }) {
   const { me, galat, bukaSheet, yakin, toast, muatInbox } = useAplikasi();
-  const [filter, setFilter] = useState('Menunggu HR');
+  const [filter, setFilter] = useState(awal);
   const { list, halaman, page, setPage, search, setSearch, muat } = useDaftar('adm_ketidakhadiran', filter);
   const putus = useKeputusan('adm_ket_putus', muat);
   const hapus = async (x: Data) => {
@@ -145,7 +147,8 @@ function DaftarIzin() {
           {x.dibuatOleh && <div className="kv"><span>Dibuat oleh</span><span><span className="badge b-purple">{x.dibuatOleh}</span></span></div>}
           {/^Menunggu/.test(x.status) && x.userId !== me?.id && <Tombol id={x.id} putus={putus} />}
           {isAdminUp(me) && <AksiAdmin ubah={() => bukaSheet(<FormUbahKet x={x} selesai={() => { muat(); muatInbox(); }} />)} hapus={() => hapus(x)} />}
-        </div>))}<NavigasiHalaman page={page} total={halaman?.total ?? 0} totalPages={halaman?.totalPages ?? 1} ubah={setPage} /></> : <div className="empty">Tidak ada pengajuan pada filter ini.</div>}
+        </div>))}<NavigasiHalaman page={page} total={halaman?.total ?? 0} totalPages={halaman?.totalPages ?? 1} ubah={setPage} /></> : <div className="empty">Tidak ada pengajuan pada filter ini.{filter !== 'ALL' && <div style={{ marginTop: 10 }}>
+          <button className="btn ghost sm auto" onClick={() => setFilter('ALL')}><Ikon n="history" />Lihat riwayat tim (semua status)</button></div>}</div>}
     </div>
   );
 }
