@@ -782,6 +782,7 @@ CREATE TABLE IF NOT EXISTS aset_kendaraan (
   tahun       SMALLINT NULL,
   plat        VARCHAR(20)  NOT NULL,
   tgl_pajak   DATE NULL,                             -- jatuh tempo pajak tahunan berikutnya
+  tgl_stnk    DATE NULL,                             -- masa berlaku STNK (perpanjangan 5 tahunan / ganti plat)
   keterangan  VARCHAR(500) NOT NULL DEFAULT '',
   aktif       TINYINT(1) NOT NULL DEFAULT 1,
   dibuat_oleh VARCHAR(150) NOT NULL DEFAULT '',
