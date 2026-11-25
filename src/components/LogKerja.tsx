@@ -6,7 +6,8 @@ import { Ikon } from './Ikon';
 import { api } from '@/lib/klien/api';
 import { jamKerjaTeks, jamStr, tglIndo, todayStr } from '@/lib/klien/format';
 
-export type Periode = { jenis: 'minggu' | 'bulan'; dari: string; sampai: string; label: string; sebelum: string; sesudah: string };
+export type JenisPeriode = 'hari' | 'minggu' | 'bulan';
+export type Periode = { jenis: JenisPeriode; dari: string; sampai: string; label: string; sebelum: string; sesudah: string };
 export type Kategori = { id: number; nama: string; divisi?: string };
 export type Komentar = { id: number; oleh: string; isi: string; waktu: string };
 export type Log = { id: number; tanggal: string; kategoriId: number | null; kategori: string; uraian: string; jamMulai: string; jamSelesai: string; durasi: number;
@@ -18,17 +19,19 @@ export const STATUS = [['rencana', 'Rencana'], ['proses', 'Proses'], ['selesai',
 export const WARNA_BEBAN: Record<string, string> = { underload: 'kuning', optimal: 'hijau', overload: 'merah', belum: 'abu', kosong: 'abu' };
 export const jam = (m: number) => (!m ? '0j' : m < 60 ? m + 'm' : jamKerjaTeks(m));
 
-export function PilihPeriode({ p, ubah }: { p: Periode | null; ubah: (jenis: 'minggu' | 'bulan', tanggal: string) => void }) {
-  const jenis = p?.jenis ?? 'minggu';
+export function PilihPeriode({ p, ubah }: { p: Periode | null; ubah: (jenis: JenisPeriode, tanggal: string) => void }) {
+  const jenis = p?.jenis ?? 'minggu', kini = todayStr();
   return (
     <div className="lk-periode">
-      <div className="seg lk-jenis">{([['minggu', 'Mingguan'], ['bulan', 'Bulanan']] as const).map(([k, t]) =>
-        <button key={k} type="button" className={jenis === k ? 'on' : ''} onClick={() => ubah(k, p?.dari ?? todayStr())}>{t}</button>)}</div>
+      <div className="seg lk-jenis">{([['hari', 'Harian'], ['minggu', 'Mingguan'], ['bulan', 'Bulanan']] as const).map(([k, t]) =>
+        <button key={k} type="button" className={jenis === k ? 'on' : ''} onClick={() => ubah(k, k === 'hari' ? (p && p.sampai < kini ? p.sampai : kini) : p?.dari ?? kini)}>{t}</button>)}</div>
       <div className="lk-geser">
         <button type="button" className="btn ghost sm auto" disabled={!p} onClick={() => p && ubah(jenis, p.sebelum)} aria-label="Periode sebelumnya"><Ikon n="chevron-left" /></button>
+        {jenis === 'hari' && p ? <input type="date" className="lk-tgl" value={p.dari} max={kini} aria-label="Pilih tanggal"
+          onChange={(e) => e.target.value && ubah('hari', e.target.value > kini ? kini : e.target.value)} /> : null}
         <b>{p?.label ?? '…'}</b>
-        <button type="button" className="btn ghost sm auto" disabled={!p || p.sesudah > todayStr()} onClick={() => p && ubah(jenis, p.sesudah)} aria-label="Periode berikutnya"><Ikon n="chevron-right" /></button>
-        <button type="button" className="btn ghost sm auto" onClick={() => ubah(jenis, todayStr())}>Hari ini</button>
+        <button type="button" className="btn ghost sm auto" disabled={!p || p.sesudah > kini} onClick={() => p && ubah(jenis, p.sesudah)} aria-label="Periode berikutnya"><Ikon n="chevron-right" /></button>
+        <button type="button" className="btn ghost sm auto" onClick={() => ubah('hari', kini)} title="To-do yang diisi hari ini">Hari ini</button>
       </div>
     </div>
   );

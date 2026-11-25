@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isAdminUp, useAplikasi } from '@/components/Aplikasi';
 import { Ikon } from '@/components/Ikon';
-import { DaftarLog, MeterUtilisasi, PerKategori, PilihPeriode, WARNA_BEBAN, jam, type Log, type Periode, type Ringkas } from '@/components/LogKerja';
+import { DaftarLog, MeterUtilisasi, PerKategori, PilihPeriode, WARNA_BEBAN, jam, type JenisPeriode, type Log, type Periode, type Ringkas } from '@/components/LogKerja';
 import { api } from '@/lib/klien/api';
 import { keExcel } from '@/lib/klien/excel';
 import { NAMA_BULAN, todayStr } from '@/lib/klien/format';
@@ -26,7 +26,7 @@ export default function BebanKerja() {
 
 function PerPeriode() {
   const { galat, bukaSheet } = useAplikasi();
-  const [pilih, setPilih] = useState<{ jenis: 'minggu' | 'bulan'; tanggal: string; divisi: string }>({ jenis: 'minggu', tanggal: todayStr(), divisi: '' });
+  const [pilih, setPilih] = useState<{ jenis: JenisPeriode; tanggal: string; divisi: string }>({ jenis: 'minggu', tanggal: todayStr(), divisi: '' });
   const [d, setD] = useState<DataTim | null>(null);
   const [filter, setFilter] = useState(''), [cari, setCari] = useState('');
   const muat = useCallback(() => { api<DataTim>('beban_tim', pilih, true).then(setD).catch(galat); }, [pilih, galat]);
@@ -80,7 +80,7 @@ function PerPeriode() {
   </>);
 }
 
-function DetailKaryawan({ userId, jenis, tanggal, segarkan }: { userId: number; jenis: 'minggu' | 'bulan'; tanggal: string; segarkan: () => void }) {
+function DetailKaryawan({ userId, jenis, tanggal, segarkan }: { userId: number; jenis: JenisPeriode; tanggal: string; segarkan: () => void }) {
   const { galat, tutupSheet } = useAplikasi();
   const [pilih, setPilih] = useState({ jenis, tanggal });
   const [d, setD] = useState<{ periode: Periode; ringkas: Ringkas & { nama: string; jabatan: string; dept: string }; kapasitasHarian: Record<string, number>; log: Log[];

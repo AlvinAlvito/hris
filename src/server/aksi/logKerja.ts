@@ -43,7 +43,7 @@ async function bolehLihat(u: User, pemilik: number) {
   const ids = await cakupanTim(u);
   if (ids !== null && !ids.includes(pemilik)) gagal('Karyawan ini bukan anggota tim Anda', 403);
 }
-function bacaPeriode(m: Baris) { return periode(s(m, 'jenis') === 'bulan' ? 'bulan' : 'minggu', s(m, 'tanggal') || tglWIB()); }
+function bacaPeriode(m: Baris) { const j = s(m, 'jenis'); return periode(j === 'bulan' || j === 'hari' ? j : 'minggu', s(m, 'tanggal') || tglWIB()); }
 
 export const aksiLogKerja: KumpulanAksi = {
   /* ================= KARYAWAN ================= */

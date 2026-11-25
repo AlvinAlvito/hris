@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAplikasi } from '@/components/Aplikasi';
 import { Ikon } from '@/components/Ikon';
-import { DaftarLog, FormLog, MeterUtilisasi, PerKategori, PilihPeriode, jam, type Kategori, type Log, type Periode, type Ringkas } from '@/components/LogKerja';
+import { DaftarLog, FormLog, MeterUtilisasi, PerKategori, PilihPeriode, jam, type Kategori, type JenisPeriode, type Log, type Periode, type Ringkas } from '@/components/LogKerja';
 import { api } from '@/lib/klien/api';
 
 type Data = { periode: Periode; ringkas: Ringkas; kapasitasHarian: Record<string, number>; log: Log[]; kategori: Kategori[]; batas: { bawah: number; atas: number };
@@ -11,7 +11,7 @@ type Data = { periode: Periode; ringkas: Ringkas; kapasitasHarian: Record<string
 
 export default function PekerjaanSaya() {
   const { galat, toast } = useAplikasi();
-  const [pilih, setPilih] = useState<{ jenis: 'minggu' | 'bulan'; tanggal: string }>({ jenis: 'minggu', tanggal: '' });
+  const [pilih, setPilih] = useState<{ jenis: JenisPeriode; tanggal: string }>({ jenis: 'minggu', tanggal: '' });
   const [d, setD] = useState<Data | null>(null);
   useEffect(() => {   // dari notifikasi komentar: /pekerjaan?tanggal=YYYY-MM-DD
     const t = new URLSearchParams(window.location.search).get('tanggal');

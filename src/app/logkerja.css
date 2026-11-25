@@ -104,3 +104,4 @@ td.lk-sel.abu,span.lk-sel.abu{color:var(--muted)}
   /* Pekerjaan Saya di HP: ringkasan beban kerja tampil sebelum form & daftar */
   .lk-halaman .lk-grid>div:last-child{order:-1}
 }
+.lk-tgl{width:auto;min-width:150px;margin:0;padding:6px 10px}

@@ -15,8 +15,11 @@ const tgl = (t: string) => `${+t.slice(8, 10)} ${BLN[+t.slice(5, 7) - 1]}`;
 const menit = (j: string) => { const [h, m] = String(j).split(':').map(Number); return h * 60 + (m || 0); };
 
 /* periode berisi tanggal t: minggu (Senin–Minggu) atau bulan kalender */
+const NAMA_HARI = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
 export function periode(jenis: string, t: string) {
   if (!POLA_TGL.test(t)) t = tglWIB();
+  // harian: to-do satu tanggal (arahan HRD 25 Nov 2026 — cek to-do per tanggal)
+  if (jenis === 'hari') return { jenis: 'hari', dari: t, sampai: t, label: `${NAMA_HARI[hariIso(t) - 1]}, ${tgl(t)} ${t.slice(0, 4)}`, sebelum: tambahHari(t, -1), sesudah: tambahHari(t, 1) };
   if (jenis === 'bulan') {
     const dari = t.slice(0, 8) + '01';
     const sampai = new Date(Date.UTC(+t.slice(0, 4), +t.slice(5, 7), 0)).toISOString().slice(0, 10);
