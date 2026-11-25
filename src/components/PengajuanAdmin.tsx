@@ -9,7 +9,7 @@ import { pad, tglPendek, todayStr } from '@/lib/klien/format';
 type Data = Record<string, any>;
 const JENIS: [string, string, string][] = [
   ['dlk', 'Dinas Luar Kota / Kegiatan Lapangan', 'Izin'], ['wfh', 'Work From Home', 'Izin'], ['sakit', 'Sakit', 'Izin'], ['izin', 'Izin', 'Izin'],
-  ['keperluan', 'Keperluan pribadi', 'Izin'], ['lainnya', 'Lainnya', 'Izin'], ['setengah_hari', 'Izin setengah hari', 'Izin'], ['izin_telat', 'Izin terlambat', 'Izin'],
+  ['keperluan', 'Keperluan pribadi', 'Izin'], ['lainnya', 'Lainnya', 'Izin'], ['izin_telat', 'Izin terlambat', 'Izin'],
   ['Cuti Tahunan', 'Cuti Tahunan', 'Cuti'], ['Cuti Penting', 'Cuti Penting', 'Cuti'], ['Cuti Melahirkan', 'Cuti Melahirkan', 'Cuti'],
 ];
 const JENIS_KET_UBAH: [string, string][] = [['dlk', 'Dinas Luar Kota'], ['wfh', 'WFH'], ['sakit', 'Sakit'], ['izin', 'Izin'], ['keperluan', 'Keperluan pribadi'],

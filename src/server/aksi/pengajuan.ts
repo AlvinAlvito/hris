@@ -58,6 +58,8 @@ export const aksiPengajuan: KumpulanAksi = {
     const jenis = s(m, 'jenis');
     validasiLinkBukti(m);
     if (!['sakit', 'izin', 'keperluan', 'libur', 'lainnya', 'setengah_hari', 'wfh', 'dlk'].includes(jenis)) gagal('Jenis pengajuan tidak sah');
+    // izin setengah hari dihapus per 26 Nov 2026 (arahan HRD), diganti Izin Pulang Lebih Awal
+    if (jenis === 'setengah_hari') gagal('Izin setengah hari sudah tidak dipakai. Ajukan "Izin Pulang Lebih Awal" di menu Pengajuan.');
     const tgl = s(m, 'tanggal');
     if (!POLA_TGL.test(tgl)) gagal('Tanggal tidak sah');
     // setengah hari selalu satu tanggal; jenis lain boleh rentang tanggal
@@ -126,7 +128,7 @@ export const aksiPengajuan: KumpulanAksi = {
     const u = await need();
     const jenis = s(m, 'jenis');
     validasiLinkBukti(m);
-    if (!['lembur', 'lupa_in', 'lupa_out', 'izin_telat'].includes(jenis)) gagal('Jenis pengajuan tidak sah');
+    if (!['lembur', 'lupa_in', 'lupa_out', 'izin_telat', 'pulang_awal'].includes(jenis)) gagal('Jenis pengajuan tidak sah');
     if (jenis !== 'lembur' && u.role === 'direktur') gagal('Super Admin tidak melakukan absensi');
     const tgl = s(m, 'tanggal');
     if (!POLA_TGL.test(tgl)) gagal('Tanggal tidak sah');
@@ -150,17 +152,25 @@ export const aksiPengajuan: KumpulanAksi = {
       const jam = s(m, 'jam');
       if (!POLA_JAM.test(jam)) gagal('Jam tidak sah');
       if (tgl > hariIni) {
+        if (jenis === 'pulang_awal') gagal('Izin pulang lebih awal diajukan pada hari itu, setelah clock in');
         if (jenis !== 'izin_telat') gagal('Lupa clock in / out hanya untuk hari ini atau yang sudah lewat');
         if (tgl > tambahHari(hariIni, 30)) gagal('Izin terlambat paling jauh 30 hari ke depan');
       }
-      if (tgl === hariIni && jenis !== 'izin_telat' && jam > jamWIB().slice(0, 5)) gagal('Jam yang diajukan belum terjadi');
-      const a = await q1('SELECT in_time, out_time FROM absensi WHERE user_id=? AND tanggal=?', [u.id, tgl]);
+      // pulang lebih awal boleh diajukan sebelum pulang (jam rencana pulang), lupa clock in/out hanya untuk jam yang sudah lewat
+      if (tgl === hariIni && !['izin_telat', 'pulang_awal'].includes(jenis) && jam > jamWIB().slice(0, 5)) gagal('Jam yang diajukan belum terjadi');
+      const a = await q1('SELECT in_time, out_time, jadwal_out FROM absensi WHERE user_id=? AND tanggal=?', [u.id, tgl]);
       if (jenis === 'lupa_out') {
         if (!a?.in_time) gagal('Belum ada clock in pada tanggal itu. Ajukan "Lupa Clock In" terlebih dulu.');
         if (a.out_time) gagal('Jam pulang tanggal itu sudah tercatat');
         sebelum = 'Masuk ' + String(a.in_time).slice(0, 5);
       } else if (jenis === 'lupa_in') {
         sebelum = a?.in_time ? 'Tercatat masuk ' + String(a.in_time).slice(0, 5) : 'Tidak ada clock in';
+      } else if (jenis === 'pulang_awal') {
+        if (!a?.in_time) gagal('Clock in dulu pada hari itu, lalu ajukan izin pulang lebih awal');
+        if (jam <= String(a.in_time).slice(0, 5)) gagal('Jam pulang harus setelah jam masuk ' + String(a.in_time).slice(0, 5));
+        const jadwal = a.jadwal_out ? String(a.jadwal_out).slice(0, 5) : '';
+        if (jadwal && jam >= jadwal) gagal(`Jam pulang ${jam} tidak lebih awal dari jadwal pulang ${jadwal}`);
+        sebelum = jadwal ? 'Jadwal pulang ' + jadwal : 'Masuk ' + String(a.in_time).slice(0, 5);
       }
       jamA = jam + ':00';
       sesudah = (jenis === 'izin_telat' ? 'Perkiraan tiba ' : jenis === 'lupa_in' ? 'Masuk ' : 'Pulang ') + jam;
@@ -193,7 +203,7 @@ export const aksiPengajuan: KumpulanAksi = {
         DATE_FORMAT(k.tanggal,'%d/%m/%Y') waktu FROM ketidakhadiran k WHERE k.user_id=?
       UNION ALL SELECT 'pengajuan' tipe, p.id, p.created_at diajukan, p.status, p.jenis judul, p.alasan ket, p.catatan_hr catatan, p.bukti_link buktiLink,
         CONCAT(DATE_FORMAT(p.tanggal,'%d/%m/%Y'),IF(p.jam_mulai IS NOT NULL,CONCAT(' · ',TIME_FORMAT(p.jam_mulai,'%H:%i'),IF(p.jam_selesai IS NOT NULL,CONCAT('–',TIME_FORMAT(p.jam_selesai,'%H:%i')),'')),'')) waktu
-        FROM pengajuan p WHERE p.user_id=? AND p.jenis IN ('lembur','lupa_in','lupa_out','izin_telat')
+        FROM pengajuan p WHERE p.user_id=? AND p.jenis IN ('lembur','lupa_in','lupa_out','izin_telat','pulang_awal')
 `;
     let filter = '';
     if (jenis === 'menunggu') filter += " WHERE status LIKE 'Menunggu%'";

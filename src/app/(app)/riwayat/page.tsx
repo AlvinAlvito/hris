@@ -59,7 +59,7 @@ export default function Riwayat() {
                 {a.setengahHari && <span className="badge b-red">Setengah hari tanpa izin</span>}
                 {a.jadwalIn && <span className="badge b-gray">Jadwal {a.jadwalIn}–{a.jadwalOut}</span>}
                 {a.kerjaDari && <span className="badge b-blue">{a.kerjaDari === 'wfh' ? 'WFH' : 'Dinas luar kota'}</span>}
-                {a.izinSesi && <span className="badge b-amber">Izin ½ hari {a.izinSesi}</span>}
+                {a.izinSesi && <span className="badge b-amber">{a.izinSesi === 'awal' ? 'Izin pulang lebih awal' : `Izin ½ hari ${a.izinSesi}`}</span>}
                 {a.shiftNama && a.jamMode === 'shift' && <span className="badge b-blue">{a.shiftNama}</span>}
                 {a.kurangMenit > 0 && <span className="badge b-amber">Kurang {jamKerjaTeks(a.kurangMenit)}</span>}
                 {a.lemburMenit > 0 && <span className="badge b-purple">Lembur {jamKerjaTeks(a.lemburMenit)}</span>}

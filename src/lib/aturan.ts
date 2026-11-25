@@ -111,7 +111,7 @@ export function inList(ids: number[]): string { return ids.length ? ids.map((x) 
 /* ---------------- label ---------------- */
 const LABEL_JENIS: Record<string, string> = {
   ganti_shift: 'Ganti Shift', libur: 'Libur / Pindah Libur', lembur: 'Lembur',
-  lupa_in: 'Lupa Clock In', lupa_out: 'Lupa Clock Out', izin_telat: 'Izin Terlambat',
+  lupa_in: 'Lupa Clock In', lupa_out: 'Lupa Clock Out', izin_telat: 'Izin Terlambat', pulang_awal: 'Izin Pulang Lebih Awal',
 };
 export function labelJenis(j: string): string { return LABEL_JENIS[j] ?? j; }
 const LABEL_KET: Record<string, string> = {

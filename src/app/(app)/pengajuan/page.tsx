@@ -52,13 +52,13 @@ export default function Pengajuan() {
   const jenis: [string, string, ReactNode][] = [
     ['Cuti', 'plane', <FormCuti key="c" selesai={selesai} />],
     ['Izin / Sakit', 'file-heart', <FormIzin key="i" jenis="izin" selesai={selesai} />],
-    ['Setengah Hari', 'timer', <FormIzin key="s" jenis="setengah_hari" selesai={selesai} />],
     ['WFH', 'house', <FormIzin key="w" jenis="wfh" selesai={selesai} />],
     ['Dinas Luar Kota', 'map-pin', <FormIzin key="d" jenis="dlk" selesai={selesai} />],
     ['Lembur', 'clock', <FormLembur key="l" selesai={selesai} />],
     ['Lupa Clock In', 'log-in', <FormKoreksiAbsen key="li" jenis="lupa_in" selesai={selesai} />],
     ['Lupa Clock Out', 'log-out', <FormKoreksiAbsen key="lo" jenis="lupa_out" selesai={selesai} />],
     ['Izin Terlambat', 'alarm-clock', <FormKoreksiAbsen key="it" jenis="izin_telat" selesai={selesai} />],
+    ['Pulang Lebih Awal', 'timer', <FormKoreksiAbsen key="pa" jenis="pulang_awal" selesai={selesai} />],
   ];
   const batal = async (x: Item) => {
     if (!(await yakin('Batalkan pengajuan ini?'))) return;

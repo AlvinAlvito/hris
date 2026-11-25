@@ -143,7 +143,7 @@ CREATE TABLE IF NOT EXISTS absensi (
   cabang_nama VARCHAR(120) NOT NULL DEFAULT '',
   jam_mode    VARCHAR(12) NOT NULL DEFAULT 'tetap',
   kerja_dari  VARCHAR(10) NOT NULL DEFAULT '',     -- 'wfh' / 'dlk' bila absen dengan izin kerja di luar kantor
-  izin_sesi   VARCHAR(10) NOT NULL DEFAULT '',     -- 'pagi' / 'siang' bila izin setengah hari
+  izin_sesi   VARCHAR(10) NOT NULL DEFAULT '',     -- 'pagi' / 'siang' bila izin setengah hari (data lama); 'awal' = izin pulang lebih awal disetujui
   shift_id    INT NULL,
   shift_nama  VARCHAR(80) NOT NULL DEFAULT '',
   jadwal_in   TIME NULL,                        -- jam masuk seharusnya (tetap/shift)
@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS jadwal_shift (
 CREATE TABLE IF NOT EXISTS pengajuan (
   id            INT AUTO_INCREMENT PRIMARY KEY,
   user_id       INT NOT NULL,
-  jenis         ENUM('ganti_shift','libur','lembur','lupa_in','lupa_out','izin_telat') NOT NULL,   -- ganti_shift & libur: data lama
+  jenis         ENUM('ganti_shift','libur','lembur','lupa_in','lupa_out','izin_telat','pulang_awal') NOT NULL,   -- ganti_shift & libur: data lama
   tanggal       DATE NOT NULL,
   tanggal2      DATE NULL,               -- libur pengganti (untuk pindah libur)
   shift_id      INT NULL,                -- shift yang diminta (ganti shift)

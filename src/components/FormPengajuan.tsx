@@ -179,13 +179,14 @@ export function FormLembur({ selesai }: { selesai: Selesai }) {
 const KOREKSI: Record<string, { judul: string; label: string; ket: string; contoh: string }> = {
   lupa_in: { judul: 'Lupa Clock In', label: 'Jam masuk sebenarnya', ket: 'Setelah disetujui atasan, jam masuk ini tercatat di absensi Anda (keterlambatan dihitung dari jam ini).', contoh: 'mis. sudah tiba 08:20 tapi lupa menekan Clock In' },
   lupa_out: { judul: 'Lupa Clock Out', label: 'Jam pulang sebenarnya', ket: 'Setelah disetujui atasan, jam pulang ini tercatat dan total jam kerja dihitung ulang.', contoh: 'mis. pulang 17:05, lupa menekan Clock Out' },
+  pulang_awal: { judul: 'Izin Pulang Lebih Awal', label: 'Jam pulang', ket: 'Bila disetujui atasan, jam clock out Anda otomatis menjadi jam ini dan tidak dihitung setengah hari tanpa izin.', contoh: 'mis. menjemput anak yang sakit dari sekolah' },
   izin_telat: { judul: 'Izin Terlambat', label: 'Perkiraan jam tiba', ket: 'Bila disetujui, keterlambatan pada tanggal itu tidak dihitung pelanggaran (menit terlambat tetap tercatat).', contoh: 'mis. mengantar anak ke rumah sakit pagi hari' },
 };
-export function FormKoreksiAbsen({ jenis, selesai }: { jenis: 'lupa_in' | 'lupa_out' | 'izin_telat'; selesai: Selesai }) {
+export function FormKoreksiAbsen({ jenis, selesai }: { jenis: 'lupa_in' | 'lupa_out' | 'izin_telat' | 'pulang_awal'; selesai: Selesai }) {
   const { tutupSheet, toast, galat } = useAplikasi();
   const k = KOREKSI[jenis];
   const [tgl, setTgl] = useState(todayStr());
-  const [jam, setJam] = useState(jenis === 'lupa_out' ? '17:00' : jenis === 'lupa_in' ? '08:30' : '09:30');
+  const [jam, setJam] = useState(jenis === 'lupa_out' ? '17:00' : jenis === 'lupa_in' ? '08:30' : jenis === 'pulang_awal' ? '15:00' : '09:30');
   const [alasan, setAlasan] = useState('');
   const [buktiLink, setBuktiLink] = useState(''), [buktiFile, setBuktiFile] = useState<File | null>(null);
   const [kirim, setKirim] = useState(false);

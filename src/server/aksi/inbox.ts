@@ -18,8 +18,8 @@ export const aksiInbox: KumpulanAksi = {
       // pengajuan diputus atasan berwenang, kecuali milik sendiri
       const tim = await cakupanTim(u), c = (kolom: string) => sqlCakupan(tim, kolom);
       tambah('cuti', 'Pengajuan cuti', await n(`SELECT COUNT(*) FROM cuti WHERE status='Menunggu' AND user_id<>?${c('user_id')}`, [me]), 'plane', 'cuti');
-      tambah('pengajuan', 'Lembur, lupa absen & izin terlambat', await n(`SELECT COUNT(*) FROM pengajuan WHERE status IN ('Menunggu HR','Menunggu Rekomendasi')
-        AND jenis IN ('lembur','lupa_in','lupa_out','izin_telat') AND user_id<>?${c('user_id')}`, [me]), 'clock', 'persetujuan:pengajuan');
+      tambah('pengajuan', 'Lembur, lupa absen, izin terlambat & pulang awal', await n(`SELECT COUNT(*) FROM pengajuan WHERE status IN ('Menunggu HR','Menunggu Rekomendasi')
+        AND jenis IN ('lembur','lupa_in','lupa_out','izin_telat','pulang_awal') AND user_id<>?${c('user_id')}`, [me]), 'clock', 'persetujuan:pengajuan');
       tambah('ket', 'Izin, sakit, WFH & dinas', await n(`SELECT COUNT(*) FROM ketidakhadiran WHERE status IN ('Menunggu HR','Menunggu Rekomendasi')
         AND user_id<>?${c('user_id')}`, [me]), 'file-heart', 'persetujuan:ket');
       tambah('absen', 'Absensi menunggu approval (31 hari)', await n(`SELECT COUNT(*) FROM absensi WHERE approval='menunggu' AND in_time IS NOT NULL

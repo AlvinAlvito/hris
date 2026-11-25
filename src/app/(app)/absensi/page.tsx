@@ -75,7 +75,7 @@ export default function Absensi() {
     'Mode Absen': a.mode, 'Kerja Dari': a.kerjaDari === 'wfh' ? 'WFH' : a.kerjaDari === 'dlk' ? 'Dinas Luar Kota' : 'Kantor', 'Pola Jam': a.jamMode, Shift: a.shiftNama || '',
     'Jadwal Masuk': a.jadwalIn || '', 'Jadwal Pulang': a.jadwalOut || '', 'Target (jam)': a.targetMenit ? +(a.targetMenit / 60).toFixed(2) : '',
     'Kurang (jam)': a.kurangMenit ? +(a.kurangMenit / 60).toFixed(2) : 0, 'Lembur (jam)': a.lemburMenit ? +(a.lemburMenit / 60).toFixed(2) : 0,
-    'Izin ½ Hari': a.izinSesi || '', 'Tanggal Pulang': a.tglPulang || '', 'Clock In': a.inTime, 'Clock Out': a.outTime, Durasi: a.durasi,
+    'Izin ½ Hari / Pulang Awal': a.izinSesi === 'awal' ? 'Pulang awal (izin)' : a.izinSesi || '', 'Tanggal Pulang': a.tglPulang || '', 'Clock In': a.inTime, 'Clock Out': a.outTime, Durasi: a.durasi,
     Terlambat: a.terlambat ? 'Ya' : 'Tidak', 'Menit Telat': a.menitTelat, 'Di Luar Area': a.inLuar || a.outLuar ? 'Ya' : 'Tidak',
     'Koordinat In': a.inLat != null ? `${a.inLat.toFixed(6)}, ${a.inLng.toFixed(6)}` : '', 'Koordinat Out': a.outLat != null ? `${a.outLat.toFixed(6)}, ${a.outLng.toFixed(6)}` : '',
     'Lupa Clock Out': a.lupaOut ? 'Ya' : 'Tidak', Dikoreksi: a.dikoreksi ? 'Ya' : 'Tidak', 'Dikoreksi Oleh': a.koreksiOleh || '', 'Catatan Koreksi': a.koreksiCatatan || '',
@@ -166,7 +166,7 @@ export default function Absensi() {
                 : a.terlambat ? <span className={'badge ' + (a.telatDiizinkan ? 'b-amber' : 'b-red')} title={a.telatDiizinkan ? 'Izin terlambat disetujui' : undefined}>{a.menitTelat} menit{a.telatDiizinkan && ' · izin'}</span>
                   : <span className="badge b-green">OK</span>}</td>
               <td>{a.jamMode === 'fleksibel' ? <span className="badge b-green">Fleksibel</span> : a.jadwalIn ? `${a.jadwalIn}–${a.jadwalOut}` : <span className="badge b-gray">{a.shiftNama || 'Tetap'}</span>}
-                {a.izinSesi && <div className="tiny muted">½ hari {a.izinSesi}</div>}
+                {a.izinSesi && <div className="tiny muted">{a.izinSesi === 'awal' ? 'Pulang awal (izin)' : `½ hari ${a.izinSesi}`}</div>}
                 {a.setengahHari && <div><span className="badge b-red">½ hari tanpa izin</span></div>}</td>
               <td>{a.kurangMenit > 0 ? <span className="badge b-amber">-{jamKerjaTeks(a.kurangMenit)}</span> : a.lemburMenit > 0 ? <span className="badge b-purple">+{jamKerjaTeks(a.lemburMenit)}</span> : <span className="badge b-green">pas</span>}</td>
               <td>{a.kerjaDari ? <span className="badge b-blue">{a.kerjaDari === 'wfh' ? 'WFH' : 'Dinas'}</span>

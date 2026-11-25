@@ -89,7 +89,7 @@ export const aksiPersetujuan: KumpulanAksi = {
         isi: `${tglIdn(x.tanggal)} · ${oleh}${catatan ? ' · ' + catatan : ''}` });
       return { pesan: 'Pengajuan ditolak' };
     }
-    if (!['lembur', 'lupa_in', 'lupa_out', 'izin_telat'].includes(x.jenis)) gagal('Jenis pengajuan ini sudah tidak dipakai');
+    if (!['lembur', 'lupa_in', 'lupa_out', 'izin_telat', 'pulang_awal'].includes(x.jenis)) gagal('Jenis pengajuan ini sudah tidak dipakai');
     const kar = await q1('SELECT * FROM users WHERE id=?', [x.user_id]);
     if (!kar) gagal('Karyawan tidak ditemukan');
     const jam = x.jam_mulai ? String(x.jam_mulai).slice(0, 5) : '';
@@ -115,6 +115,14 @@ export const aksiPersetujuan: KumpulanAksi = {
           dikoreksi=1, koreksi_oleh=?, koreksi_catatan=?, tgl_koreksi=NOW() WHERE id=?`,
         [h.out_time, h.tgl_pulang, h.menit_kerja, h.kurang_menit, h.lembur_menit, h.langgar_inti, oleh, ket.slice(0, 1000), a.id]);
         pesan = `Disetujui — jam pulang ${jam} tercatat`;
+      } else if (x.jenis === 'pulang_awal') {
+        // jam clock out otomatis menjadi jam izin pulang (walau sudah clock out lebih lambat); ditandai izin agar tidak dihitung setengah hari tanpa izin
+        if (!a || !a.in_time) gagal('Belum ada clock in pada tanggal itu.');
+        const h = await hitungAbsensi({ ...a, izin_sesi: a.izin_sesi || 'awal' }, kar, String(a.in_time).slice(0, 5), jam);
+        await exec(`UPDATE absensi SET out_time=?, tgl_pulang=?, menit_kerja=?, kurang_menit=?, lembur_menit=?, langgar_inti=?, lupa_out=0, izin_sesi=?,
+          dikoreksi=1, koreksi_oleh=?, koreksi_catatan=?, tgl_koreksi=NOW() WHERE id=?`,
+        [h.out_time, h.tgl_pulang, h.menit_kerja, h.kurang_menit, 0, h.langgar_inti, a.izin_sesi || 'awal', oleh, ket.slice(0, 1000), a.id]);
+        pesan = `Disetujui — jam pulang ${jam} tercatat sebagai clock out`;
       } else if (x.jenis === 'izin_telat') {
         // berlaku untuk baris yang sudah ada; bila belum absen, clock in nanti membaca izin ini
         if (a) await exec('UPDATE absensi SET telat_diizinkan=1 WHERE id=?', [a.id]);

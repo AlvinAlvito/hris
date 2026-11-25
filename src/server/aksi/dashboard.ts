@@ -24,14 +24,15 @@ async function cutiKetPada(t: string) {
   const cuti = new Map((await q("SELECT user_id, jenis FROM cuti WHERE status='Disetujui' AND mulai<=? AND selesai>=?", [t, t])).map((r) => [r.user_id as number, r.jenis as string]));
   return { ket, cuti };
 }
-/* izin yang disetujui tetapi karyawan tetap bekerja pada tanggal itu: WFH, setengah hari (ketidakhadiran), izin terlambat (pengajuan) */
+/* izin yang disetujui tetapi karyawan tetap bekerja pada tanggal itu: WFH, setengah hari (ketidakhadiran), izin terlambat & pulang lebih awal (pengajuan) */
 async function izinHadirPada(t: string) {
   const izin = new Map<number, string[]>();
   const tambah = (uid: number, teks: string) => { const l = izin.get(uid) ?? []; if (!l.includes(teks)) l.push(teks); izin.set(uid, l); };
   for (const r of await q("SELECT user_id, jenis, sesi FROM ketidakhadiran WHERE tanggal=? AND status='Disetujui' AND jenis IN ('wfh','setengah_hari')", [t]))
     tambah(r.user_id, labelKet(r.jenis) + (r.sesi ? ` (${r.sesi})` : ''));
-  for (const r of await q("SELECT user_id, jam_mulai FROM pengajuan WHERE tanggal=? AND status='Disetujui' AND jenis='izin_telat'", [t]))
-    tambah(r.user_id, 'Izin terlambat' + (r.jam_mulai ? ` (tiba ${String(r.jam_mulai).slice(0, 5)})` : ''));
+  for (const r of await q("SELECT user_id, jenis, jam_mulai FROM pengajuan WHERE tanggal=? AND status='Disetujui' AND jenis IN ('izin_telat','pulang_awal')", [t]))
+    tambah(r.user_id, r.jenis === 'pulang_awal' ? 'Pulang lebih awal' + (r.jam_mulai ? ` (${String(r.jam_mulai).slice(0, 5)})` : '')
+      : 'Izin terlambat' + (r.jam_mulai ? ` (tiba ${String(r.jam_mulai).slice(0, 5)})` : ''));
   return new Map([...izin.entries()].map(([k, v]) => [k, v.join(' + ')]));
 }
 /* status harian menganggap terlambat dengan izin sebagai hadir (untuk payroll & KPI); di dashboard tetap ditampilkan terlambat (izin) */

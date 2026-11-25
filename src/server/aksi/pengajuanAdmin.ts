@@ -31,6 +31,7 @@ export const aksiPengajuanAdmin: KumpulanAksi = {
     if ((epoch(sampai) - epoch(mulai)) / 86400 > 60) gagal('Rentang paling panjang 61 hari');
     const kategori = JENIS_KET.includes(jenis) ? 'ket' : JENIS_CUTI.includes(jenis) ? 'cuti' : jenis === 'izin_telat' ? 'telat' : '';
     if (!kategori) gagal('Jenis pengajuan tidak sah');
+    if (jenis === 'setengah_hari') gagal('Izin setengah hari sudah tidak dipakai. Gunakan Izin Pulang Lebih Awal (diajukan karyawan) atau koreksi jam pulang.');
     const sesi = jenis === 'setengah_hari' ? s(m, 'sesi') : '';
     if (jenis === 'setengah_hari' && sesi !== 'pagi' && sesi !== 'siang') gagal('Pilih sesi pagi atau siang');
     const jam = s(m, 'jam');

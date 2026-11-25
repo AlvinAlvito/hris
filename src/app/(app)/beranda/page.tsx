@@ -5,7 +5,7 @@ import { useAplikasi } from '@/components/Aplikasi';
 import { Avatar } from '@/components/Avatar';
 import { Ikon } from '@/components/Ikon';
 import { KameraAbsen } from '@/components/KameraAbsen';
-import { FormCuti, FormIzin } from '@/components/FormPengajuan';
+import { FormCuti, FormIzin, FormKoreksiAbsen } from '@/components/FormPengajuan';
 import { ItemPengumuman, useBukaPengumuman } from '@/components/Pengumuman';
 import { api } from '@/lib/klien/api';
 import { jamKerjaTeks, masaKerjaTeks, NAMA_BULAN, pad, salam, tglIndo, tglPendek, todayStr } from '@/lib/klien/format';
@@ -106,7 +106,7 @@ export default function Beranda() {
       <div className="quick">
         {([['plane', 'Cuti', () => bukaSheet(<FormCuti selesai={muat} />)],
           ['file-heart', 'Izin / Sakit', () => bukaSheet(<FormIzin jenis="izin" selesai={muat} />)],
-          ['timer', '½ Hari', () => bukaSheet(<FormIzin jenis="setengah_hari" selesai={muat} />)],
+          ['timer', 'Pulang Awal', () => bukaSheet(<FormKoreksiAbsen jenis="pulang_awal" selesai={muat} />)],
           ['house', 'WFH', () => bukaSheet(<FormIzin jenis="wfh" selesai={muat} />)],
           ['map-pin', 'Dinas', () => bukaSheet(<FormIzin jenis="dlk" selesai={muat} />)]] as [string, string, () => void][]).map(([ic, t, fn]) => (
           <button key={t} className="qa" onClick={fn}><span className="i"><Ikon n={ic} /></span>{t}</button>
