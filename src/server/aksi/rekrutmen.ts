@@ -10,6 +10,7 @@ import { folderPenyimpanan, jalurAman } from '@/lib/berkas';
 import { POLA_TGL, tglWIB } from '@/lib/waktu';
 import { bacaCv, catatRiwayat, kabariHc, kenaliCv, LABEL_TAHAP, LABEL_TIPE, pertanyaanLowongan, picuAntrean, simpanCv, TAHAP, type Tahap } from '@/lib/rekrutmen';
 import { groqJson, KuotaPenuh } from '@/lib/ai/groqJson';
+import { hasilTes, paketUntuk, siapkanTes } from './tesRekrutmen';
 import type { KumpulanAksi } from '../daftar';
 
 const TIPE = ['tetap', 'kontrak', 'magang', 'freelance', 'paruh_waktu'];
@@ -17,6 +18,10 @@ export const PENDIDIKAN = ['SMA/SMK', 'D3', 'D4', 'S1', 'S2', 'S3', 'Lainnya'];
 export const PENGALAMAN = ['Belum ada (fresh graduate)', 'Kurang dari 1 tahun', '1–2 tahun', '3–5 tahun', 'Lebih dari 5 tahun'];
 const json = <T>(t: unknown, bawaan: T): T => { try { return t ? JSON.parse(String(t)) : bawaan; } catch { return bawaan; } };
 const barisTeks = (t: unknown) => String(t ?? '').split('\n').map((x) => x.trim()).filter(Boolean);
+type Bidang = { nama: string; paketId: number | null };
+const bidangLowongan = (r: Baris) => json<Bidang[]>(r.bidang, []).filter((b) => b && b.nama);
+const POLA_URL = /^https?:\/\/[^\s<>"]+$/i;
+export const PETUNJUK_VIDEO = 'Rekam video Anda mengajar satu materi (5–10 menit), unggah ke YouTube atau Google Drive, lalu tempel tautannya di sini. Pastikan tautan dapat dibuka oleh siapa saja.';
 
 /* lowongan yang tampil di portal: berstatus buka dan belum lewat batas */
 const SQL_BUKA = "status='buka' AND (batas IS NULL OR batas >= CURDATE())";
@@ -30,19 +35,25 @@ function batasiIp(ip: string) {
   if (jejakIp.size > 5000) jejakIp.clear();
 }
 
-function lowonganPublik(r: Baris) {
+/* soalAda: paket tes yang sudah berisi soal (paket kosong dianggap tidak ada tes) */
+function lowonganPublik(r: Baris, soalAda: Set<number> = new Set()) {
+  const bidang = bidangLowongan(r), ada = (id: unknown) => soalAda.has(Number(id));
   return { id: r.id, judul: r.judul, divisi: r.divisi, lokasi: r.lokasi, tipe: r.tipe, tipeLabel: LABEL_TIPE[r.tipe] ?? r.tipe,
     deskripsi: r.deskripsi ?? '', kualifikasi: barisTeks(r.kualifikasi), nilaiPlus: barisTeks(r.nilai_plus), pertanyaan: pertanyaanLowongan(r),
-    batas: r.batas, dibuka: String(r.created_at).slice(0, 10) };
+    batas: r.batas, dibuka: String(r.created_at).slice(0, 10), wajibVideo: !!r.wajib_video, petunjukVideo: r.petunjuk_video || PETUNJUK_VIDEO,
+    bidang: bidang.map((b) => ({ nama: b.nama, tes: ada(b.paketId || r.tes_paket_id) })), tes: bidang.length ? bidang.some((b) => ada(b.paketId || r.tes_paket_id)) : ada(r.tes_paket_id) };
 }
-function lowonganAdmin(r: Baris) {
-  return { ...lowonganPublik(r), kualifikasiTeks: r.kualifikasi ?? '', nilaiPlusTeks: r.nilai_plus ?? '', kuota: r.kuota, status: r.status,
-    jumlah: Number(r.jumlah ?? 0), baru: Number(r.baru ?? 0), diterima: Number(r.diterima ?? 0) };
+function lowonganAdmin(r: Baris, soalAda: Set<number>) {
+  return { ...lowonganPublik(r, soalAda), kualifikasiTeks: r.kualifikasi ?? '', nilaiPlusTeks: r.nilai_plus ?? '', kuota: r.kuota, status: r.status,
+    jumlah: Number(r.jumlah ?? 0), baru: Number(r.baru ?? 0), diterima: Number(r.diterima ?? 0),
+    petunjukVideoTeks: r.petunjuk_video ?? '', bidangAtur: bidangLowongan(r), tesPaketId: r.tes_paket_id ?? null };
 }
+const paketBersoal = async () => new Set((await q('SELECT DISTINCT paket_id FROM tes_soal')).map((x) => Number(x.paket_id)));
 function kandidatRingkas(r: Baris) {
   const pr = json<Record<string, any>>(r.profil, {});
   const pd = Array.isArray(pr.pendidikan) && pr.pendidikan[0] ? pr.pendidikan[0] : null;
   return { id: r.id, kode: r.kode, nama: r.nama, email: r.email, noHp: r.no_hp, lowonganId: r.lowongan_id, lowongan: r.judul ?? '', tahap: r.tahap,
+    bidang: r.bidang ?? '', linkVideo: r.link_video ?? '', tesStatus: r.tes_status ?? null, tesNilai: r.tes_nilai ?? null, tesLulus: r.tes_status === 'selesai' && Number(r.tes_lulus) ? Number(r.tes_nilai) >= Number(r.tes_lulus) : null,
     skor: r.skor, kecocokan: r.kecocokan, aiStatus: r.ai_status, rating: r.rating_hc, pendidikan: pd ? [pd.jenjang, pd.jurusan].filter(Boolean).join(' ') : r.pendidikan,
     pengalamanBulan: pr.total_pengalaman_bulan ?? null, pengalamanIsian: r.pengalaman ?? '', ringkasan: String(pr.ringkasan ?? '').slice(0, 220), dilamar: r.created_at, userId: r.user_id };
 }
@@ -56,7 +67,8 @@ export const aksiRekrutmen: KumpulanAksi = {
   /* ================= PUBLIK (tanpa login) ================= */
   async rk_portal() {
     const l = await q(`SELECT * FROM lowongan WHERE ${SQL_BUKA} ORDER BY created_at DESC`);
-    return { lowongan: l.map(lowonganPublik), pendidikan: PENDIDIKAN, pengalaman: PENGALAMAN };
+    const soalAda = await paketBersoal();
+    return { lowongan: l.map((x) => lowonganPublik(x, soalAda)), pendidikan: PENDIDIKAN, pengalaman: PENGALAMAN };
   },
 
   async rk_lamar(m) {
@@ -76,6 +88,11 @@ export const aksiRekrutmen: KumpulanAksi = {
     if (!PENGALAMAN.includes(pengalaman)) gagal('Pilih lama pengalaman kerja');
     const tautan = s(m, 'tautan');
     if (tautan && (!/^https?:\/\/\S+$/i.test(tautan) || tautan.length > 300)) gagal('Tautan portofolio harus diawali http:// atau https://');
+    const daftarBidang = bidangLowongan(lw), bidang = s(m, 'bidang');
+    if (daftarBidang.length && !daftarBidang.some((b) => b.nama === bidang)) gagal('Pilih bidang yang Anda lamar');
+    const linkVideo = s(m, 'linkVideo');
+    if (lw.wajib_video && !linkVideo) gagal('Tempel tautan video Anda (YouTube, Google Drive, dll.)');
+    if (linkVideo && (!POLA_URL.test(linkVideo) || linkVideo.length > 500)) gagal('Tautan video harus berupa alamat lengkap yang diawali https://');
     const tanya = pertanyaanLowongan(lw), masuk = (m.jawaban && typeof m.jawaban === 'object') ? m.jawaban as Record<string, unknown> : {};
     const jawaban: Record<string, string> = {};
     tanya.forEach((t, n) => {
@@ -99,6 +116,7 @@ export const aksiRekrutmen: KumpulanAksi = {
       const kode = 'RK' + randomBytes(4).toString('hex').toUpperCase().slice(0, 6);
       try {
         id = await sisipkan('lamaran', { lowongan_id: lw.id, kode, nama, email, no_hp: hp, domisili: s(m, 'domisili').slice(0, 120), pendidikan, tautan,
+          bidang: daftarBidang.length ? bidang.slice(0, 100) : '', link_video: linkVideo,
           jurusan: s(m, 'jurusan').slice(0, 100), pengalaman, kerja_terakhir: s(m, 'kerjaTerakhir').slice(0, 150),
           jawaban: JSON.stringify(jawaban), cv_path: cvPath, cv_nama: (s(m, 'cvNama').replace(/[^\p{L}\p{N} ._()-]/gu, '_') || 'cv.' + jenis.ext).slice(0, 200),
           cv_mime: jenis.mime, ip: (konteks()?.ip ?? '').slice(0, 45) });
@@ -106,9 +124,11 @@ export const aksiRekrutmen: KumpulanAksi = {
     }
     if (!id) gagal('Gagal menyimpan lamaran, silakan coba lagi');
     await catatRiwayat(id, 'sistem', 'Lamaran masuk melalui portal rekrutmen.');
-    await kabariHc(nama, lw.judul);
+    await kabariHc(nama, lw.judul + (daftarBidang.length ? ' — ' + bidang : ''));
     picuAntrean();
-    return { nama, posisi: lw.judul };
+    // tes pilihan ganda (bila lowongan memakainya): pelamar langsung diarahkan mengerjakan
+    const tes = await siapkanTes(id, paketUntuk(lw.bidang, lw.tes_paket_id, bidang));
+    return { nama, posisi: lw.judul, tes };
   },
 
   /* ================= HC / SUPER ADMIN ================= */
@@ -117,8 +137,11 @@ export const aksiRekrutmen: KumpulanAksi = {
     const lw = await q(`SELECT w.*, COUNT(l.id) jumlah, SUM(l.tahap='baru') baru, SUM(l.tahap='diterima') diterima
       FROM lowongan w LEFT JOIN lamaran l ON l.lowongan_id=w.id GROUP BY w.id ORDER BY FIELD(w.status,'buka','draf','tutup'), w.created_at DESC`);
     const n = async (sql: string) => Number((await q1(sql))?.n ?? 0);
+    const soalAda = await paketBersoal();
+    const paket = await q('SELECT p.id, p.judul, p.divisi, (SELECT COUNT(*) FROM tes_soal WHERE paket_id=p.id) n FROM tes_paket p ORDER BY p.judul');
     return {
-      lowongan: lw.map(lowonganAdmin), tahap: TAHAP.map((k) => ({ k, label: LABEL_TAHAP[k] })), tipe: LABEL_TIPE,
+      lowongan: lw.map((x) => lowonganAdmin(x, soalAda)), tahap: TAHAP.map((k) => ({ k, label: LABEL_TAHAP[k] })), tipe: LABEL_TIPE, petunjukVideo: PETUNJUK_VIDEO,
+      paket: paket.map((x) => ({ id: x.id, judul: x.judul, divisi: x.divisi, jumlahSoal: Number(x.n) })),
       stat: { buka: lw.filter((x) => x.status === 'buka').length, baru: await n("SELECT COUNT(*) n FROM lamaran WHERE tahap='baru'"),
         bulanIni: await n("SELECT COUNT(*) n FROM lamaran WHERE created_at >= DATE_FORMAT(CURDATE(),'%Y-%m-01')"),
         antrean: await n("SELECT COUNT(*) n FROM lamaran WHERE ai_status IN ('antri','proses')"), proses: await n("SELECT COUNT(*) n FROM lamaran WHERE tahap NOT IN ('diterima','ditolak')") },
@@ -168,7 +191,19 @@ ${deskripsi || '-'}`;
     if (status === 'buka' && !barisTeks(m.kualifikasi).length) gagal('Isi minimal satu kualifikasi wajib sebelum lowongan dibuka');
     const pertanyaan = (Array.isArray(m.pertanyaan) ? m.pertanyaan : barisTeks(m.pertanyaan)).map((x: unknown) => String(x).trim()).filter(Boolean);
     if (pertanyaan.length > 5) gagal('Maksimal 5 pertanyaan tambahan');
+    // bidang (opsional) masing-masing boleh punya paket tes sendiri; tanpa paket = paket tes bawaan lowongan
+    const idPaket = new Set((await q('SELECT id FROM tes_paket')).map((x) => Number(x.id)));
+    const cekPaket = (v: unknown) => { const n = Number(v) || 0; if (n && !idPaket.has(n)) gagal('Paket soal yang dipilih tidak ditemukan'); return n || null; };
+    const bidang: Bidang[] = [];
+    for (const b of Array.isArray(m.bidang) ? m.bidang as Record<string, unknown>[] : []) {
+      const nama = String(b?.nama ?? '').replace(/\s+/g, ' ').trim().slice(0, 100);
+      if (!nama) continue;
+      if (bidang.some((x) => x.nama.toLowerCase() === nama.toLowerCase())) gagal(`Bidang "${nama}" tertulis dua kali`);
+      bidang.push({ nama, paketId: cekPaket(b.paketId) });
+    }
+    if (bidang.length > 20) gagal('Maksimal 20 bidang');
     const data: Baris = { judul: judul.slice(0, 150), divisi: s(m, 'divisi').slice(0, 100), lokasi: s(m, 'lokasi').slice(0, 150), tipe,
+      wajib_video: m.wajibVideo ? 1 : 0, petunjuk_video: s(m, 'petunjukVideo').slice(0, 500), bidang: JSON.stringify(bidang), tes_paket_id: cekPaket(m.tesPaketId),
       deskripsi: s(m, 'deskripsi').slice(0, 6000), kualifikasi: s(m, 'kualifikasi').slice(0, 4000), nilai_plus: s(m, 'nilaiPlus').slice(0, 3000),
       pertanyaan: JSON.stringify(pertanyaan.map((x: string) => x.slice(0, 200))), kuota: Math.max(1, Math.min(999, i(m, 'kuota', 1))), batas: batas || null, status };
     if (id) {
@@ -214,8 +249,10 @@ ${deskripsi || '-'}`;
     const cari = s(m, 'cari');
     if (cari) { w.push('(l.nama LIKE ? OR l.email LIKE ? OR l.kode LIKE ? OR l.profil LIKE ?)'); const k = '%' + cari.replace(/[\\%_]/g, '\\$&') + '%'; p.push(k, k, k, k); }
     const urut = s(m, 'urut') === 'terbaru' ? 'l.created_at DESC' : 'l.skor IS NULL, l.skor DESC, l.created_at DESC';
+    const urutAkhir = s(m, 'urut') === 'tes' ? "t.status='selesai' DESC, t.nilai DESC, l.skor DESC" : urut;
     const l = await q(`SELECT l.id, l.kode, l.nama, l.email, l.no_hp, l.lowongan_id, l.tahap, l.skor, l.kecocokan, l.ai_status, l.rating_hc, l.pendidikan,
-      l.pengalaman, l.profil, l.created_at, l.user_id, w.judul FROM lamaran l JOIN lowongan w ON w.id=l.lowongan_id ${w.length ? 'WHERE ' + w.join(' AND ') : ''} ORDER BY ${urut} LIMIT 500`, p);
+      l.pengalaman, l.profil, l.created_at, l.user_id, l.bidang, l.link_video, w.judul, t.status tes_status, t.nilai tes_nilai, t.nilai_lulus tes_lulus
+      FROM lamaran l JOIN lowongan w ON w.id=l.lowongan_id LEFT JOIN lamaran_tes t ON t.lamaran_id=l.id ${w.length ? 'WHERE ' + w.join(' AND ') : ''} ORDER BY ${urutAkhir} LIMIT 500`, p);
     return l.map(kandidatRingkas);
   },
 
@@ -224,7 +261,7 @@ ${deskripsi || '-'}`;
     const l = await lamaranAda(i(m, 'id'));
     const riwayat = await q('SELECT * FROM lamaran_riwayat WHERE lamaran_id=? ORDER BY id DESC', [l.id]);
     return {
-      ...kandidatRingkas(l), domisili: l.domisili, tautan: l.tautan, pendidikanIsian: l.pendidikan, jurusan: l.jurusan, pengalamanIsian: l.pengalaman, kerjaTerakhir: l.kerja_terakhir, cvNama: l.cv_nama, cvUrl: '/api/rk_cv?id=' + l.id, aiGalat: l.ai_galat,
+      ...kandidatRingkas(l), domisili: l.domisili, tautan: l.tautan, tes: await hasilTes(l.id), pendidikanIsian: l.pendidikan, jurusan: l.jurusan, pengalamanIsian: l.pengalaman, kerjaTerakhir: l.kerja_terakhir, cvNama: l.cv_nama, cvUrl: '/api/rk_cv?id=' + l.id, aiGalat: l.ai_galat,
       jawaban: json<Record<string, string>>(l.jawaban, {}), profil: json(l.profil, null), analisis: json(l.analisis, null), diproses: l.diproses_at,
       riwayat: riwayat.map((r) => ({ id: r.id, jenis: r.jenis, dari: r.dari, ke: r.ke, catatan: r.catatan, oleh: r.oleh_nama, waktu: r.created_at })),
     };

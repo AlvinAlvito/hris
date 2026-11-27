@@ -6,9 +6,11 @@ import { useAplikasi } from '@/components/Aplikasi';
 import { Ikon } from '@/components/Ikon';
 import { api } from '@/lib/klien/api';
 import { tglIndo } from '@/lib/klien/format';
+import { TesPilihanGanda } from './TesRekrutmen';
 
 type Lowongan = { id: number; judul: string; divisi: string; lokasi: string; tipe: string; tipeLabel: string; deskripsi: string; kualifikasi: string[];
-  nilaiPlus: string[]; pertanyaan: string[]; batas: string | null; dibuka: string };
+  nilaiPlus: string[]; pertanyaan: string[]; batas: string | null; dibuka: string; wajibVideo: boolean; petunjukVideo: string; bidang: { nama: string; tes: boolean }[]; tes: boolean };
+type Hasil = { nama: string; posisi: string; tes?: string };
 const MAKS_CV = 5 * 1024 * 1024;
 
 const bacaBerkas = (f: File) => new Promise<string>((ok, gagal) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => gagal(new Error('Gagal membaca berkas')); r.readAsDataURL(f); });
@@ -18,7 +20,7 @@ export function PortalRekrutmen() {
   const [data, setData] = useState<{ lowongan: Lowongan[]; pendidikan: string[]; pengalaman: string[] } | null>(null);
   const [pilih, setPilih] = useState<Lowongan | null>(null);
   const [lamar, setLamar] = useState(false);
-  const [selesai, setSelesai] = useState<{ nama: string; posisi: string } | null>(null);
+  const [selesai, setSelesai] = useState<Hasil | null>(null);
   const [cari, setCari] = useState('');
 
   useEffect(() => { api<{ lowongan: Lowongan[]; pendidikan: string[]; pengalaman: string[] }>('rk_portal', {}, true).then(setData).catch(galat); }, [galat]);
@@ -43,7 +45,7 @@ export function PortalRekrutmen() {
         <span className="rk-pita"><Ikon n="briefcase" />Karier</span>
       </header>
 
-      {selesai ? (
+      {selesai?.tes ? <TesPilihanGanda token={selesai.tes} baruMelamar /> : selesai ? (
         <section className="card rk-selesai">
           <div className="rk-selesai-ic"><Ikon n="circle-check" /></div>
           <h2>Terima kasih, {selesai.nama.split(' ')[0]}!</h2>
@@ -88,14 +90,22 @@ function DetailLowongan({ l, kembali, lamar }: { l: Lowongan; kembali: () => voi
       {l.deskripsi && <><h4>Tentang posisi ini</h4><p className="rk-teks">{l.deskripsi}</p></>}
       {l.kualifikasi.length > 0 && <><h4>Kualifikasi</h4><ul className="rk-list">{l.kualifikasi.map((k) => <li key={k}><Ikon n="check" />{k}</li>)}</ul></>}
       {l.nilaiPlus.length > 0 && <><h4>Nilai tambah</h4><ul className="rk-list plus">{l.nilaiPlus.map((k) => <li key={k}><Ikon n="star" />{k}</li>)}</ul></>}
+      {l.bidang.length > 0 && <><h4>Bidang</h4><div className="rk-chip">{l.bidang.map((b) => <span key={b.nama}>{b.nama}</span>)}</div></>}
+      {(l.wajibVideo || l.tes) && <><h4>Alur melamar</h4><ol className="rk-alur">
+        <li>Isi data diri dan unggah CV.</li>
+        {l.wajibVideo && <li>Sertakan tautan video Anda (YouTube / Google Drive).</li>}
+        {l.tes && <li>Kerjakan tes pilihan ganda yang langsung muncul setelah lamaran terkirim.</li>}
+      </ol></>}
       <button className="btn rk-tombol" onClick={lamar}><Ikon n="send" />Lamar Sekarang</button>
     </section>
   );
 }
 
-function FormLamaran({ l, pendidikan, opsiPengalaman, batal, selesai }: { l: Lowongan; pendidikan: string[]; opsiPengalaman: string[]; batal: () => void; selesai: (x: { nama: string; posisi: string }) => void }) {
+function FormLamaran({ l, pendidikan, opsiPengalaman, batal, selesai }: { l: Lowongan; pendidikan: string[]; opsiPengalaman: string[]; batal: () => void; selesai: (x: Hasil) => void }) {
   const { settings, toast, galat } = useAplikasi();
-  const [v, setV] = useState({ nama: '', email: '', noHp: '', domisili: '', pendidikan: '', jurusan: '', pengalaman: '', kerjaTerakhir: '', tautan: '', situs: '' });
+  const [v, setV] = useState({ nama: '', email: '', noHp: '', domisili: '', pendidikan: '', jurusan: '', pengalaman: '', kerjaTerakhir: '', tautan: '', situs: '',
+    bidang: l.bidang.length === 1 ? l.bidang[0].nama : '', linkVideo: '' });
+  const adaTes = l.bidang.length ? !!l.bidang.find((b) => b.nama === v.bidang)?.tes || (!v.bidang && l.tes) : l.tes;
   const [jawaban, setJawaban] = useState<string[]>(l.pertanyaan.map(() => ''));
   const [cv, setCv] = useState<File | null>(null);
   const [setuju, setSetuju] = useState(false);
@@ -110,19 +120,22 @@ function FormLamaran({ l, pendidikan, opsiPengalaman, batal, selesai }: { l: Low
   const ajukan = async (e: React.FormEvent) => {
     e.preventDefault();
     // periksa berurutan dari atas agar pesan sesuai kolom yang belum diisi
-    const kurang = v.nama.trim().length < 3 ? 'Isi nama lengkap Anda'
+    const kurang = l.bidang.length && !v.bidang ? 'Pilih bidang yang Anda lamar'
+      : v.nama.trim().length < 3 ? 'Isi nama lengkap Anda'
       : !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email.trim()) ? 'Isi alamat email yang valid'
       : v.noHp.replace(/\D/g, '').length < 9 ? 'Isi nomor WhatsApp yang aktif'
       : !v.pendidikan ? 'Pilih pendidikan terakhir'
       : !v.pengalaman ? 'Pilih lama pengalaman kerja'
+      : l.wajibVideo && !v.linkVideo.trim() ? 'Tempel tautan video Anda'
+      : v.linkVideo.trim() && !/^https?:\/\/\S+$/i.test(v.linkVideo.trim()) ? 'Tautan video harus diawali https://'
       : l.pertanyaan.find((_, n) => !jawaban[n].trim()) ? `Jawab pertanyaan: "${l.pertanyaan.find((_, n) => !jawaban[n].trim())}"`
       : !cv ? 'Unggah CV Anda (PDF atau DOCX)'
       : !setuju ? 'Centang persetujuan pemrosesan data' : '';
     if (kurang || !cv) { toast(kurang, true); return; }
     setKirim(true);
     try {
-      const r = await api<{ nama: string; posisi: string }>('rk_lamar', { ...v, lowonganId: l.id, jawaban, setuju, cv: await bacaBerkas(cv), cvNama: cv.name });
-      selesai({ nama: r.nama || v.nama, posisi: r.posisi || l.judul });
+      const r = await api<Hasil>('rk_lamar', { ...v, lowonganId: l.id, jawaban, setuju, cv: await bacaBerkas(cv), cvNama: cv.name });
+      selesai({ nama: r.nama || v.nama, posisi: r.posisi || l.judul, tes: r.tes || '' });
     } catch (er) { galat(er); setKirim(false); }
   };
   return (
@@ -130,6 +143,8 @@ function FormLamaran({ l, pendidikan, opsiPengalaman, batal, selesai }: { l: Low
       <button type="button" className="btn ghost sm auto" onClick={batal}><Ikon n="chevron-left" />Kembali ke detail</button>
       <h2>Lamar: {l.judul}</h2>
       <p className="muted small">Lengkapi data di bawah ini. Kolom bertanda * wajib diisi.</p>
+      {l.bidang.length > 0 && <><label htmlFor="rkBidang">Bidang yang dilamar *</label>
+        <select id="rkBidang" value={v.bidang} onChange={set('bidang')} required><option value="">— pilih bidang —</option>{l.bidang.map((b) => <option key={b.nama}>{b.nama}</option>)}</select></>}
       <label htmlFor="rkNama">Nama lengkap *</label><input id="rkNama" value={v.nama} onChange={set('nama')} autoComplete="name" required maxLength={150} />
       <div className="row">
         <div><label htmlFor="rkEmail">Email *</label><input id="rkEmail" type="email" value={v.email} onChange={set('email')} autoComplete="email" required maxLength={150} /></div>
@@ -149,6 +164,11 @@ function FormLamaran({ l, pendidikan, opsiPengalaman, batal, selesai }: { l: Low
       <input id="rkKerja" value={v.kerjaTerakhir} onChange={set('kerjaTerakhir')} maxLength={150} placeholder="mis. Guru Matematika — SMA Swasta Cendekia" />
       <label htmlFor="rkTautan">Tautan portofolio / LinkedIn <span className="tiny muted">(opsional)</span></label>
       <input id="rkTautan" type="url" value={v.tautan} onChange={set('tautan')} placeholder="https://" maxLength={300} />
+      {l.wajibVideo && <div className="rk-video">
+        <label htmlFor="rkVideo"><Ikon n="video" />Tautan video *</label>
+        <p className="tiny">{l.petunjukVideo}</p>
+        <input id="rkVideo" type="url" inputMode="url" value={v.linkVideo} onChange={set('linkVideo')} placeholder="https://youtu.be/… atau https://drive.google.com/…" maxLength={500} required />
+      </div>}
       {l.pertanyaan.map((t, n) => (
         <div key={n}><label htmlFor={'rkQ' + n}>{t} *</label>
           <textarea id={'rkQ' + n} value={jawaban[n]} maxLength={1500} onChange={(e) => setJawaban((x) => x.map((y, j) => (j === n ? e.target.value : y)))} /></div>))}
@@ -161,7 +181,8 @@ function FormLamaran({ l, pendidikan, opsiPengalaman, batal, selesai }: { l: Low
       <input className="rk-jebak" tabIndex={-1} autoComplete="off" value={v.situs} onChange={set('situs')} aria-hidden="true" />
       <label className="rk-setuju"><input type="checkbox" checked={setuju} onChange={(e) => setSetuju(e.target.checked)} />
         <span>Saya menyatakan data yang saya isi benar dan menyetujui data serta CV saya diproses (termasuk dibantu analisis AI) untuk keperluan rekrutmen {settings.perusahaan || 'Yayasan Pendidikan Posi'}.</span></label>
-      <button className="btn rk-tombol" type="submit" disabled={kirim}>{kirim ? <><span className="spin" /> Mengirim lamaran…</> : <><Ikon n="send" />Kirim Lamaran</>}</button>
+      {adaTes && <div className="note" style={{ marginTop: 14 }}><Ikon n="clipboard-list" /> Setelah lamaran terkirim, Anda langsung diarahkan mengerjakan <b>tes pilihan ganda</b>. Siapkan waktu dan koneksi internet yang stabil.</div>}
+      <button className="btn rk-tombol" type="submit" disabled={kirim}>{kirim ? <><span className="spin" /> Mengirim lamaran…</> : <><Ikon n="send" />{adaTes ? 'Kirim Lamaran & Lanjut ke Tes' : 'Kirim Lamaran'}</>}</button>
     </form>
   );
 }

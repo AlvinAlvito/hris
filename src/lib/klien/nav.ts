@@ -27,6 +27,7 @@ export const NAV: ItemNav[] = [
   { k: 'kar', href: '/karyawan', t: 'Karyawan', ic: 'users', g: 'SDM', s: adm, siap: true },
   { k: 'org', href: '/organisasi', t: 'Struktur Organisasi', ic: 'network', g: 'SDM', s: adm, siap: true },
   { k: 'rek', href: '/kelola-rekrutmen', t: 'Rekrutmen', ic: 'user-plus', g: 'SDM', s: adm, siap: true },
+  { k: 'soal', href: '/bank-soal', t: 'Bank Soal Tes', ic: 'clipboard-list', g: 'SDM', s: penyetuju, siap: true },
   { k: 'cab', href: '/lokasi', t: 'Lokasi Kerja', ic: 'map-pin', g: 'SDM', s: adm, siap: true },
   { k: 'aset', href: '/aset', t: 'Aset', ic: 'car', g: 'SDM', s: adm, siap: true },
   { k: 'lapabs', href: '/laporan/absensi', t: 'Laporan Absensi', ic: 'file-spreadsheet', g: 'Laporan', s: adm, siap: true },

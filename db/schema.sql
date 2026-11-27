@@ -584,6 +584,10 @@ CREATE TABLE IF NOT EXISTS lowongan (
   kuota       INT NOT NULL DEFAULT 1,
   batas       DATE NULL,                              -- batas akhir lamaran (kosong = sampai ditutup)
   status      ENUM('draf','buka','tutup') NOT NULL DEFAULT 'draf',
+  wajib_video TINYINT(1) NOT NULL DEFAULT 0,          -- pelamar wajib menyertakan tautan video (mis. video mengajar)
+  petunjuk_video VARCHAR(500) NOT NULL DEFAULT '',    -- petunjuk pembuatan video untuk pelamar
+  bidang      TEXT,                                   -- pilihan bidang (JSON [{nama, paketId}]); paketId kosong = pakai tes_paket_id
+  tes_paket_id INT NULL,                              -- paket tes pilihan ganda yang dikerjakan setelah melamar
   dibuat_oleh INT NULL,
   created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -603,6 +607,8 @@ CREATE TABLE IF NOT EXISTS lamaran (
   pengalaman   VARCHAR(30)  NOT NULL DEFAULT '',     -- lama pengalaman kerja (isian pelamar)
   kerja_terakhir VARCHAR(150) NOT NULL DEFAULT '',   -- posisi & tempat kerja terakhir (isian pelamar)
   tautan       VARCHAR(300) NOT NULL DEFAULT '',     -- portofolio / LinkedIn
+  bidang       VARCHAR(100) NOT NULL DEFAULT '',     -- bidang yang dipilih pelamar (mis. Matematika)
+  link_video   VARCHAR(500) NOT NULL DEFAULT '',     -- tautan video pelamar (YouTube, Google Drive, dll.)
   jawaban      TEXT,                                 -- jawaban pertanyaan tambahan (JSON)
   cv_path      VARCHAR(200) NOT NULL,
   cv_nama      VARCHAR(200) NOT NULL DEFAULT '',
@@ -639,6 +645,64 @@ CREATE TABLE IF NOT EXISTS lamaran_riwayat (
   created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX (lamaran_id),
   CONSTRAINT fk_riwayat_lamaran FOREIGN KEY (lamaran_id) REFERENCES lamaran(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Bank soal tes rekrutmen (pilihan ganda) dikelola HC / Supervisor; lamaran_tes = satu tes per lamaran.
+-- Soal disalin ke lamaran_tes.soal saat tes dimulai, jadi hasil lama tidak berubah bila soal diubah / dihapus.
+CREATE TABLE IF NOT EXISTS tes_paket (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  judul        VARCHAR(150) NOT NULL,
+  divisi       VARCHAR(100) NOT NULL DEFAULT '',
+  petunjuk     TEXT,
+  durasi_menit SMALLINT NOT NULL DEFAULT 0,           -- 0 = tanpa batas waktu
+  nilai_lulus  TINYINT UNSIGNED NOT NULL DEFAULT 0,   -- nilai minimal lulus 0..100 (0 = tidak ditentukan)
+  acak         TINYINT(1) NOT NULL DEFAULT 1,         -- urutan soal diacak per pelamar
+  dibuat_oleh  INT NULL,
+  dibuat_nama  VARCHAR(150) NOT NULL DEFAULT '',
+  created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS tes_soal (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  paket_id    INT NOT NULL,
+  pertanyaan  TEXT NOT NULL,
+  opsi        TEXT NOT NULL,                          -- pilihan jawaban (JSON array, 2..5)
+  kunci       TINYINT NOT NULL DEFAULT 0,             -- indeks pilihan yang benar (0 = A)
+  poin        SMALLINT NOT NULL DEFAULT 1,            -- bobot soal
+  pembahasan  VARCHAR(1000) NOT NULL DEFAULT '',
+  sumber      ENUM('manual','ai') NOT NULL DEFAULT 'manual',
+  urut        INT NOT NULL DEFAULT 0,
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX (paket_id, urut),
+  CONSTRAINT fk_soal_paket FOREIGN KEY (paket_id) REFERENCES tes_paket(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS lamaran_tes (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  lamaran_id   INT NOT NULL,
+  paket_id     INT NULL,
+  judul        VARCHAR(150) NOT NULL DEFAULT '',
+  token        VARCHAR(40) NOT NULL,                  -- tautan tes untuk pelamar (tanpa login)
+  status       ENUM('belum','mulai','selesai') NOT NULL DEFAULT 'belum',
+  durasi_menit SMALLINT NOT NULL DEFAULT 0,
+  nilai_lulus  TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  soal         MEDIUMTEXT,                            -- salinan soal + kunci saat tes dimulai (JSON)
+  jawaban      TEXT,                                  -- {soalId: indeks pilihan} (JSON)
+  benar        SMALLINT NULL,
+  jumlah       SMALLINT NULL,
+  poin         INT NULL,
+  maks         INT NULL,
+  nilai        TINYINT UNSIGNED NULL,                 -- 0..100 = poin / maks
+  lewat_waktu  TINYINT(1) NOT NULL DEFAULT 0,
+  mulai_at     DATETIME NULL,
+  selesai_at   DATETIME NULL,
+  ip           VARCHAR(45) NOT NULL DEFAULT '',
+  created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_tes_token (token),
+  UNIQUE KEY uq_tes_lamaran (lamaran_id),
+  CONSTRAINT fk_tes_lamaran FOREIGN KEY (lamaran_id) REFERENCES lamaran(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- =====================================================================

@@ -10,10 +10,13 @@ import { tglIndo, tglPendek } from '@/lib/klien/format';
 
 type Data = Record<string, any>;
 type Lowongan = { id: number; judul: string; divisi: string; lokasi: string; tipe: string; tipeLabel: string; deskripsi: string; kualifikasiTeks: string;
-  nilaiPlusTeks: string; pertanyaan: string[]; kuota: number; batas: string | null; status: 'draf' | 'buka' | 'tutup'; jumlah: number; baru: number; diterima: number };
+  nilaiPlusTeks: string; pertanyaan: string[]; kuota: number; batas: string | null; status: 'draf' | 'buka' | 'tutup'; jumlah: number; baru: number; diterima: number;
+  wajibVideo: boolean; petunjukVideoTeks: string; bidangAtur: { nama: string; paketId: number | null }[]; tesPaketId: number | null; tes: boolean };
 type Kandidat = { id: number; kode: string; nama: string; email: string; noHp: string; lowonganId: number; lowongan: string; tahap: string; skor: number | null;
-  kecocokan: string; aiStatus: string; rating: number | null; pendidikan: string; pengalamanBulan: number | null; pengalamanIsian: string; ringkasan: string; dilamar: string; userId: number | null };
-type Ringkas = { lowongan: Lowongan[]; tahap: { k: string; label: string }[]; tipe: Record<string, string>; stat: Data };
+  kecocokan: string; aiStatus: string; rating: number | null; pendidikan: string; pengalamanBulan: number | null; pengalamanIsian: string; ringkasan: string; dilamar: string; userId: number | null;
+  bidang: string; linkVideo: string; tesStatus: 'belum' | 'mulai' | 'selesai' | null; tesNilai: number | null; tesLulus: boolean | null };
+type Paket = { id: number; judul: string; divisi: string; jumlahSoal: number };
+type Ringkas = { lowongan: Lowongan[]; tahap: { k: string; label: string }[]; tipe: Record<string, string>; stat: Data; paket: Paket[]; petunjukVideo: string };
 
 const WARNA_TAHAP: Record<string, string> = { baru: 'var(--sky)', disaring: '#5b6fd6', tes: '#8b5cf6', wawancara_hc: '#d97706', wawancara_user: '#ea580c',
   penawaran: '#0891b2', diterima: 'var(--success)', ditolak: 'var(--danger)' };
@@ -27,6 +30,12 @@ function Skor({ k, besar }: { k: Pick<Kandidat, 'skor' | 'aiStatus' | 'kecocokan
   if (k.skor == null) return null;
   const c = k.skor >= 80 ? 'hijau' : k.skor >= 65 ? 'biru' : k.skor >= 50 ? 'kuning' : 'merah';
   return <span className={'rk-skor ' + c + (besar ? ' besar' : '')} title={'Kecocokan: ' + k.kecocokan}><b>{k.skor}</b>{besar && <small>{k.kecocokan}</small>}</span>;
+}
+/* nilai tes pilihan ganda pelamar (hijau = lulus nilai minimal, merah = di bawahnya) */
+function NilaiTes({ k }: { k: Pick<Kandidat, 'tesStatus' | 'tesNilai' | 'tesLulus'> }) {
+  if (!k.tesStatus) return null;
+  if (k.tesStatus !== 'selesai') return <span className="badge b-gray" title="Tes pilihan ganda">{k.tesStatus === 'mulai' ? 'Tes berjalan' : 'Belum tes'}</span>;
+  return <span className={'badge ' + (k.tesLulus === true ? 'b-green' : k.tesLulus === false ? 'b-red' : 'b-blue')} title="Nilai tes pilihan ganda (0–100)"><Ikon n="clipboard-list" />Tes {k.tesNilai}</span>;
 }
 
 export default function KelolaRekrutmen() {
@@ -117,6 +126,7 @@ function Pipeline({ r, lowId, setLowId, segarkan }: { r: Ringkas; lowId: number;
                 <article key={k.id} className={'rk-kartu' + (tarik === k.id ? ' tarik' : '')} draggable onDragStart={() => setTarik(k.id)} onDragEnd={() => { setTarik(null); setAtas(''); }}
                   onClick={() => buka(k.id)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') buka(k.id); }}>
                   <div className="rk-kartu-atas"><b>{k.nama}</b><Skor k={k} /></div>
+                  {(k.bidang || k.tesStatus) && <div className="rk-kartu-tes">{k.bidang && <span className="tiny muted">{k.bidang}</span>}<NilaiTes k={k} /></div>}
                   {k.pendidikan && <div className="tiny muted"><Ikon n="graduation-cap" />{k.pendidikan}</div>}
                   {(k.pengalamanBulan != null || k.pengalamanIsian) && <div className="tiny muted"><Ikon n="briefcase" />{k.pengalamanBulan != null ? pengalaman(k.pengalamanBulan) : 'Pengalaman: ' + k.pengalamanIsian}</div>}
                   <div className="rk-kartu-bawah"><span className="tiny muted">{tglPendek(String(k.dilamar).slice(0, 10))}</span>
@@ -147,17 +157,17 @@ function DaftarKandidat({ r, segarkan }: { r: Ringkas; segarkan: () => void }) {
           {r.lowongan.map((l) => <option key={l.id} value={l.id}>{l.judul}</option>)}</select>
         <select value={f.tahap} onChange={(e) => setF({ ...f, tahap: e.target.value })}><option value="">Semua tahap</option>
           {r.tahap.map((x) => <option key={x.k} value={x.k}>{x.label}</option>)}</select>
-        <select value={f.urut} onChange={(e) => setF({ ...f, urut: e.target.value })}><option value="skor">Skor AI tertinggi</option><option value="terbaru">Terbaru</option></select>
+        <select value={f.urut} onChange={(e) => setF({ ...f, urut: e.target.value })}><option value="skor">Skor AI tertinggi</option><option value="tes">Nilai tes tertinggi</option><option value="terbaru">Terbaru</option></select>
       </div>
       {!list ? <div className="skel" style={{ height: 160, marginTop: 12 }} /> : !list.length ? <div className="empty"><Ikon n="users" />Belum ada kandidat.</div> : (
         <div className="rk-tabel">{list.map((k, n) => (
           <button key={k.id} type="button" className="rk-baris" onClick={() => buka(k.id)}>
-            <span className="rk-no">{f.urut === 'skor' && k.skor != null ? '#' + (n + 1) : ''}</span>
-            <span className="rk-nama"><b>{k.nama}</b><span className="tiny muted">{k.lowongan} · {k.kode}</span>
+            <span className="rk-no">{(f.urut === 'skor' && k.skor != null) || (f.urut === 'tes' && k.tesStatus === 'selesai') ? '#' + (n + 1) : ''}</span>
+            <span className="rk-nama"><b>{k.nama}</b><span className="tiny muted">{k.lowongan}{k.bidang && ' — ' + k.bidang} · {k.kode}</span>
               {k.ringkasan && <span className="tiny rk-ringkas">{k.ringkasan}</span>}</span>
             <span className="rk-info tiny muted">{k.pendidikan}{(k.pengalamanBulan != null || k.pengalamanIsian) && <><br />{k.pengalamanBulan != null ? pengalaman(k.pengalamanBulan) : k.pengalamanIsian}</>}</span>
             <span><span className="badge" style={{ background: `color-mix(in srgb, ${WARNA_TAHAP[k.tahap]} 15%, transparent)`, color: WARNA_TAHAP[k.tahap] }}>{label[k.tahap]}</span></span>
-            <span className="rk-nilai"><Skor k={k} /></span>
+            <span className="rk-nilai"><NilaiTes k={k} /><Skor k={k} /></span>
           </button>))}</div>)}
     </div>
   );
@@ -166,7 +176,7 @@ function DaftarKandidat({ r, segarkan }: { r: Ringkas; segarkan: () => void }) {
 /* ---------------- LOWONGAN ---------------- */
 function DaftarLowongan({ r, segarkan, lihat }: { r: Ringkas; segarkan: () => void; lihat: (id: number) => void }) {
   const { bukaSheet, toast, galat, yakin } = useAplikasi();
-  const form = (l: Lowongan | null, salin = false) => bukaSheet(<FormLowongan l={l} salin={salin} tipe={r.tipe} selesai={segarkan} />, { besar: true });
+  const form = (l: Lowongan | null, salin = false) => bukaSheet(<FormLowongan l={l} salin={salin} tipe={r.tipe} paket={r.paket} petunjukVideo={r.petunjukVideo} selesai={segarkan} />, { besar: true });
   const status = (l: Lowongan, s: string) => api<{ pesan: string }>('rk_lowongan_status', { id: l.id, status: s }).then((x) => { toast(x.pesan); segarkan(); }).catch(galat);
   const hapus = async (l: Lowongan) => {
     if (!(await yakin(`Hapus lowongan "${l.judul}"?`, 'Hanya lowongan tanpa pelamar yang bisa dihapus.', { ya: 'Hapus' }))) return;
@@ -182,7 +192,8 @@ function DaftarLowongan({ r, segarkan, lihat }: { r: Ringkas; segarkan: () => vo
           <div className="rk-lw-atas"><h4>{l.judul}</h4>
             <span className={'badge ' + (l.status === 'buka' ? 'b-green' : l.status === 'draf' ? 'b-gray' : 'b-red')}>{l.status === 'buka' ? 'Dibuka' : l.status === 'draf' ? 'Draf' : 'Ditutup'}</span></div>
           <div className="rk-meta tiny"><span>{l.tipeLabel}</span>{l.divisi && <span><Ikon n="building-2" />{l.divisi}</span>}{l.lokasi && <span><Ikon n="map-pin" />{l.lokasi}</span>}
-            <span><Ikon n="calendar" />{l.batas ? 'Batas ' + tglPendek(l.batas) : 'Tanpa batas'}</span></div>
+            <span><Ikon n="calendar" />{l.batas ? 'Batas ' + tglPendek(l.batas) : 'Tanpa batas'}</span>
+            {l.wajibVideo && <span><Ikon n="video" />Video</span>}{l.tes && <span><Ikon n="clipboard-list" />Tes</span>}</div>
           <div className="rk-lw-angka"><div><b>{l.jumlah}</b><span>Pelamar</span></div><div><b>{l.baru}</b><span>Baru</span></div><div><b>{l.diterima}/{l.kuota}</b><span>Diterima</span></div></div>
           <div className="rk-lw-aksi">
             <button className="btn sm auto" onClick={() => lihat(l.id)}><Ikon n="layers" />Pipeline</button>
@@ -197,17 +208,21 @@ function DaftarLowongan({ r, segarkan, lihat }: { r: Ringkas; segarkan: () => vo
   </>);
 }
 
-function FormLowongan({ l, salin, tipe, selesai }: { l: Lowongan | null; salin: boolean; tipe: Record<string, string>; selesai: () => void }) {
+function FormLowongan({ l, salin, tipe, paket, petunjukVideo, selesai }: { l: Lowongan | null; salin: boolean; tipe: Record<string, string>; paket: Paket[]; petunjukVideo: string; selesai: () => void }) {
   const { tutupSheet, toast, galat, yakin } = useAplikasi();
   const [buatAi, setBuatAi] = useState(false);
   const [v, setV] = useState({ judul: (l?.judul ?? '') + (salin ? ' (salinan)' : ''), divisi: l?.divisi ?? '', lokasi: l?.lokasi ?? '', tipe: l?.tipe ?? 'kontrak',
     deskripsi: l?.deskripsi ?? '', kualifikasi: l?.kualifikasiTeks ?? '', nilaiPlus: l?.nilaiPlusTeks ?? '', pertanyaan: (l?.pertanyaan ?? []).join('\n'),
-    kuota: l?.kuota ?? 1, batas: salin ? '' : l?.batas ?? '', status: salin ? 'draf' : l?.status ?? 'draf' });
+    kuota: l?.kuota ?? 1, batas: salin ? '' : l?.batas ?? '', status: salin ? 'draf' : l?.status ?? 'draf',
+    wajibVideo: l?.wajibVideo ?? false, petunjukVideo: l?.petunjukVideoTeks ?? '', tesPaketId: l?.tesPaketId ?? 0 });
+  const [bidang, setBidang] = useState<{ nama: string; paketId: number | null }[]>(l?.bidangAtur ?? []);
+  const opsiPaket = (kosong: string) => [<option key={0} value={0}>{kosong}</option>,
+    ...paket.map((p) => <option key={p.id} value={p.id}>{p.judul}{p.divisi ? ` · ${p.divisi}` : ''} ({p.jumlahSoal} soal)</option>)];
   const [kirim, setKirim] = useState(false);
   const set = (k: keyof typeof v) => (e: { target: { value: string } }) => setV((x) => ({ ...x, [k]: e.target.value }));
   const simpan = (status?: string) => {
     setKirim(true);
-    api<{ pesan: string }>('rk_lowongan_simpan', { ...v, status: status ?? v.status, id: salin ? 0 : l?.id ?? 0, kuota: +v.kuota })
+    api<{ pesan: string }>('rk_lowongan_simpan', { ...v, bidang, status: status ?? v.status, id: salin ? 0 : l?.id ?? 0, kuota: +v.kuota })
       .then((x) => { tutupSheet(); toast(x.pesan); selesai(); }).catch((e) => { galat(e); setKirim(false); });
   };
   // draf kualifikasi wajib dari isian di atasnya; HC tetap meninjau & mengubahnya sebelum menyimpan
@@ -237,6 +252,24 @@ function FormLowongan({ l, salin, tipe, selesai }: { l: Lowongan | null; salin: 
     <textarea rows={3} value={v.nilaiPlus} onChange={set('nilaiPlus')} placeholder={'Pernah menjadi peserta / pembina olimpiade sains\nDomisili Medan'} />
     <label>Pertanyaan tambahan untuk pelamar <span className="tiny muted">(opsional, satu per baris, maks. 5)</span></label>
     <textarea rows={3} value={v.pertanyaan} onChange={set('pertanyaan')} placeholder={'Berapa ekspektasi gaji Anda?\nKapan Anda bisa mulai bekerja?'} />
+
+    <h4 className="rk-sub"><Ikon n="sliders-horizontal" />Seleksi tambahan <span className="tiny muted">(opsional — mis. rekrutmen tutor)</span></h4>
+    <label className="rk-setuju" style={{ marginTop: 4 }}><input type="checkbox" checked={v.wajibVideo} onChange={(e) => setV((x) => ({ ...x, wajibVideo: e.target.checked }))} />
+      <span><b>Wajib menyertakan tautan video</b> — mis. video mengajar yang diunggah pelamar ke YouTube / Google Drive.</span></label>
+    {v.wajibVideo && <><label>Petunjuk video untuk pelamar <span className="tiny muted">(kosongkan untuk memakai petunjuk bawaan)</span></label>
+      <textarea rows={2} value={v.petunjukVideo} onChange={set('petunjukVideo')} placeholder={petunjukVideo} maxLength={500} /></>}
+    <label>Tes pilihan ganda setelah melamar</label>
+    <select value={v.tesPaketId ?? 0} onChange={(e) => setV((x) => ({ ...x, tesPaketId: +e.target.value }))}>{opsiPaket('— tanpa tes —')}</select>
+    {!paket.length && <div className="tiny muted" style={{ marginTop: 4 }}>Belum ada paket soal. Buat dulu di menu <a href="/bank-soal" target="_blank" rel="noreferrer">Bank Soal Tes</a>.</div>}
+    <label>Pilihan bidang <span className="tiny muted">(opsional — pelamar memilih salah satu; tiap bidang boleh punya paket tes sendiri)</span></label>
+    <div className="rk-bidang">{bidang.map((b, n) => (
+      <div key={n} className="rk-bidang-baris">
+        <input value={b.nama} onChange={(e) => setBidang((x) => x.map((y, j) => (j === n ? { ...y, nama: e.target.value } : y)))} placeholder="mis. Matematika" maxLength={100} />
+        <select value={b.paketId ?? 0} onChange={(e) => setBidang((x) => x.map((y, j) => (j === n ? { ...y, paketId: +e.target.value || null } : y)))}>{opsiPaket('Paket tes di atas')}</select>
+        <button type="button" className="btn ghost sm auto" onClick={() => setBidang((x) => x.filter((_, j) => j !== n))} aria-label="Hapus bidang"><Ikon n="x" /></button>
+      </div>))}
+      <button type="button" className="btn ghost sm auto" onClick={() => setBidang((x) => [...x, { nama: '', paketId: null }])} disabled={bidang.length >= 20}><Ikon n="plus" />Tambah bidang</button>
+    </div>
     <div className="note" style={{ marginTop: 12 }}>AI menilai CV berdasarkan <b>kualifikasi wajib</b> dan <b>nilai tambah</b>. Tulis syarat yang jelas dan terukur agar peringkat kandidat akurat.</div>
     <div className="row" style={{ marginTop: 12 }}>
       <button className="btn ghost" disabled={kirim} onClick={() => simpan(v.status === 'buka' ? 'buka' : 'draf')}><Ikon n="check" />{v.status === 'buka' ? 'Simpan' : 'Simpan Draf'}</button>
@@ -284,6 +317,7 @@ function DetailKandidat({ id, segarkan }: { id: number; segarkan: () => void }) 
           <a className="btn ghost sm auto" href={'mailto:' + d.email}><Ikon n="mail" />{d.email}</a>
           <a className="btn ghost sm auto" href={d.cvUrl} target="_blank" rel="noreferrer"><Ikon n="file-text" />Buka CV</a>
           {d.tautan && <a className="btn ghost sm auto" href={d.tautan} target="_blank" rel="noreferrer noopener"><Ikon n="external-link" />Portofolio</a>}
+          {d.linkVideo && <a className="btn sm auto" href={d.linkVideo} target="_blank" rel="noreferrer noopener"><Ikon n="video" />Tonton video</a>}
         </div></div>
       <Skor k={d as Kandidat} besar />
     </div>
@@ -293,6 +327,7 @@ function DetailKandidat({ id, segarkan }: { id: number; segarkan: () => void }) 
     {d.aiStatus === 'gagal' && <div className="err">Analisis AI gagal: {d.aiGalat} <button className="btn ghost sm auto" onClick={ulang}><Ikon n="repeat" />Ulangi</button></div>}
 
     <div className="grid-2 rk-det-grid"><div>
+      {d.tes && <HasilTes t={d.tes} id={id} muat={muat} />}
       {a && <div className="card"><h3><Ikon n="sparkles" />Analisis AI</h3>
         {a.rekomendasi && <div className="note"><b>Rekomendasi:</b> {a.rekomendasi}</div>}
         {a.dibatasi && <div className="warn tiny" style={{ marginTop: 8 }}>{a.dibatasi}</div>}
@@ -335,6 +370,8 @@ function DetailKandidat({ id, segarkan }: { id: number; segarkan: () => void }) 
       </div>
       <div className="card"><h3><Ikon n="info" />Data Pelamar</h3>
         <div className="tiny muted" style={{ marginBottom: 4 }}>Diisi sendiri oleh pelamar saat melamar.</div>
+        {d.bidang && <div className="kv"><span>Bidang yang dilamar</span><span style={{ textAlign: 'right' }}><b>{d.bidang}</b></span></div>}
+        {d.linkVideo && <div className="kv"><span>Tautan video</span><a href={d.linkVideo} target="_blank" rel="noreferrer noopener" style={{ textAlign: 'right', wordBreak: 'break-all' }}>{d.linkVideo}</a></div>}
         <div className="kv"><span>Pendidikan terakhir</span><span style={{ textAlign: 'right' }}>{[d.pendidikanIsian, d.jurusan].filter(Boolean).join(' · ') || '—'}</span></div>
         <div className="kv"><span>Lama pengalaman kerja</span><span style={{ textAlign: 'right' }}>{d.pengalamanIsian || '—'}</span></div>
         <div className="kv"><span>Pekerjaan terakhir</span><span style={{ textAlign: 'right' }}>{d.kerjaTerakhir || '—'}</span></div>
@@ -349,4 +386,43 @@ function DetailKandidat({ id, segarkan }: { id: number; segarkan: () => void }) 
       <button className="btn ghost red-teks" onClick={hapus}><Ikon n="trash-2" />Hapus lamaran</button>
     </div></div>
   </div>);
+}
+
+/* ---------------- hasil tes pilihan ganda kandidat ---------------- */
+function HasilTes({ t, id, muat }: { t: Data; id: number; muat: () => void }) {
+  const { toast, galat, yakin } = useAplikasi();
+  const [rinci, setRinci] = useState(false);
+  const tautan = (tok: string) => `${window.location.origin}/rekrutmen/tes?t=${tok}`;
+  const salin = () => navigator.clipboard.writeText(tautan(t.token)).then(() => toast('Tautan tes disalin — kirim ke pelamar'));
+  const ulang = async () => {
+    if (!(await yakin('Atur ulang tes pelamar ini?', 'Jawaban dan nilai sebelumnya dihapus, lalu dibuat tautan tes baru dengan soal terbaru dari bank soal.', { ya: 'Atur ulang' }))) return;
+    api<{ pesan: string; token: string }>('rk_tes_ulang', { id }).then((r) => { navigator.clipboard.writeText(tautan(r.token)).catch(() => {}); toast(r.pesan + ' (tautan disalin)'); muat(); }).catch(galat);
+  };
+  const menit = (d: number | null) => (d == null ? '—' : d < 60 ? `${d} detik` : `${Math.floor(d / 60)} mnt ${d % 60} dtk`);
+  return (
+    <div className="card rk-hasil-tes"><h3><Ikon n="clipboard-list" />Tes: {t.judul}</h3>
+      {t.status !== 'selesai' ? (<>
+        <div className="note">{t.status === 'mulai' ? <>Pelamar sedang / sempat mengerjakan tes (mulai {String(t.mulai).slice(0, 16)}), belum mengirim jawaban.</> : 'Pelamar belum mengerjakan tes.'}</div>
+        <div className="rk-kontak"><button className="btn ghost sm auto" onClick={salin}><Ikon n="copy" />Salin tautan tes</button>
+          {t.status === 'mulai' && <button className="btn ghost sm auto" onClick={ulang}><Ikon n="repeat" />Atur ulang</button>}</div>
+      </>) : (<>
+        <div className="rk-tes-skor">
+          <div className={'besar ' + (t.lulus === true ? 'hijau' : t.lulus === false ? 'merah' : '')}><b>{t.nilai}</b><span>nilai</span></div>
+          <div><b>{t.benar}/{t.jumlah}</b><span>benar</span></div>
+          <div><b>{t.poin}/{t.maks}</b><span>poin</span></div>
+          <div><b>{menit(t.lamaDetik)}</b><span>lama mengerjakan</span></div>
+        </div>
+        {t.lulus !== null && <div className={t.lulus ? 'note' : 'warn'} style={{ marginTop: 8 }}>{t.lulus ? 'Lulus' : 'Belum lulus'} nilai minimal {t.nilaiLulus}.</div>}
+        {t.lewatWaktu && <div className="warn tiny" style={{ marginTop: 8 }}>Jawaban terkirim setelah batas waktu {t.durasi} menit.</div>}
+        <div className="rk-kontak"><button className="btn ghost sm auto" onClick={() => setRinci((x) => !x)}><Ikon n={rinci ? 'chevron-up' : 'chevron-down'} />{rinci ? 'Sembunyikan' : 'Lihat'} jawaban</button>
+          <button className="btn ghost sm auto" onClick={ulang}><Ikon n="repeat" />Atur ulang tes</button></div>
+        {rinci && <ol className="rk-tes-rinci">{(t.rincian as Data[]).map((x, n) => (
+          <li key={n} className={x.jawab === x.kunci ? 'ya' : 'tidak'}>
+            <div className="p">{x.p}{x.poin > 1 && <span className="tiny muted"> ({x.poin} poin)</span>}</div>
+            <div className="tiny">{x.jawab == null ? <span className="muted">Tidak dijawab</span> : <>Jawab: <b>{'ABCDE'[x.jawab]}. {x.o[x.jawab]}</b></>}
+              {x.jawab !== x.kunci && <> · Kunci: <b>{'ABCDE'[x.kunci]}. {x.o[x.kunci]}</b></>}</div>
+          </li>))}</ol>}
+      </>)}
+    </div>
+  );
 }

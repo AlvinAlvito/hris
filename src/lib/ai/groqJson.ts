@@ -13,7 +13,8 @@ function uraiJson(teks: string): Record<string, unknown> {
   throw new Error('Jawaban AI bukan JSON');
 }
 
-export async function groqJson(sistem: string, pengguna: string, maksToken = 2200): Promise<Record<string, unknown>> {
+/* nalar: tingkat penalaran model; 'medium' untuk tugas yang butuh ketelitian hitung (mis. menyusun soal & kunci jawaban) */
+export async function groqJson(sistem: string, pengguna: string, maksToken = 2200, nalar: 'low' | 'medium' | 'high' = 'low'): Promise<Record<string, unknown>> {
   const kunci = process.env.GROQ_API_KEY;
   if (!kunci) throw new Error('GROQ_API_KEY belum diisi');
   let galatTerakhir = '';
@@ -22,7 +23,7 @@ export async function groqJson(sistem: string, pengguna: string, maksToken = 220
       method: 'POST', signal: AbortSignal.timeout(90000),
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${kunci}` },
       body: JSON.stringify({
-        model, temperature: 0.1, max_completion_tokens: maksToken, reasoning_effort: 'low', response_format: { type: 'json_object' },
+        model, temperature: 0.1, max_completion_tokens: maksToken, reasoning_effort: nalar, response_format: { type: 'json_object' },
         messages: [{ role: 'system', content: sistem }, { role: 'user', content: pengguna }],
       }),
     });

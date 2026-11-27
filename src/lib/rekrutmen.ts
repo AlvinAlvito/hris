@@ -80,6 +80,7 @@ async function analisis(l: Baris, lw: Baris): Promise<Record<string, any>> {
   const jawaban: Record<string, string> = (() => { try { return JSON.parse(l.jawaban || '{}'); } catch { return {}; } })();
   const isi = [
     `LOWONGAN: ${lw.judul} (${LABEL_TIPE[lw.tipe] ?? lw.tipe})${lw.divisi ? ' · divisi ' + lw.divisi : ''}${lw.lokasi ? ' · ' + lw.lokasi : ''}`,
+    l.bidang ? `BIDANG YANG DILAMAR: ${l.bidang} (nilai kecocokan CV terutama untuk bidang ini)` : '',
     lw.deskripsi ? `DESKRIPSI: ${String(lw.deskripsi).slice(0, 1500)}` : '',
     `KUALIFIKASI WAJIB (nilai setiap nomor):\n${baris(lw.kualifikasi).map((x, n) => `${n + 1}. ${x}`).join('\n') || '(tidak dicantumkan — kosongkan "syarat")'}`,
     baris(lw.nilai_plus).length ? `NILAI PLUS:\n${baris(lw.nilai_plus).map((x) => '- ' + x).join('\n')}` : '',
