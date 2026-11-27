@@ -17,6 +17,7 @@ export const NAV: ItemNav[] = [
   { k: 'riwayat', href: '/riwayat', t: 'Riwayat Absen', ic: 'history', g: 'Saya', s: bukanDir, siap: true },
   { k: 'kerjaku', href: '/pekerjaan', t: 'Pekerjaan Saya', ic: 'list-checks', g: 'Saya', s: bukanDir, siap: true },
   { k: 'kpiku', href: '/kpi', t: 'KPI Saya', ic: 'target', g: 'Saya', s: bukanDir, siap: true },
+  { k: 'asetku', href: '/aset-saya', t: 'Aset Saya', ic: 'briefcase', g: 'Saya', s: bukanDir, siap: true },
   { k: 'dash', href: '/dashboard', t: 'Dashboard', ic: 'layout-dashboard', g: 'Kelola', s: adm, siap: true },
   { k: 'ai', href: '/asisten', t: 'AI Asisten', ic: 'sparkles', g: 'Kelola', s: adm, siap: true },
   { k: 'inbox', href: '/persetujuan', t: 'Persetujuan', ic: 'inbox', g: 'Kelola', s: penyetuju, cnt: 'total', siap: true },

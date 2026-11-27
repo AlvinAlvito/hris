@@ -28,9 +28,10 @@ import { aksiLogKerja } from './aksi/logKerja';
 import { aksiBackup } from './aksi/backup';
 import { aksiAset } from './aksi/aset';
 import { aksiTesRekrutmen } from './aksi/tesRekrutmen';
+import { aksiAsetKaryawan } from './aksi/asetKaryawan';
 
 export const AKSI: KumpulanAksi = {
   ...aksiAuth, ...aksiAbsen, ...aksiPengajuan, ...aksiInfo, ...aksiInbox, ...aksiBranding,
   ...aksiPersetujuan, ...aksiAdmin, ...aksiKaryawan, ...aksiDashboard, ...aksiLaporan, ...aksiPayroll, ...aksiOrganisasi, ...aksiRekap, ...aksiNotifikasi, ...aksiPengajuanAdmin, ...aksiAsisten,
-  ...aksiRekrutmen, ...aksiTesRekrutmen, ...aksiKpi, ...aksiLogKerja, ...aksiBackup, ...aksiAset,
+  ...aksiRekrutmen, ...aksiTesRekrutmen, ...aksiKpi, ...aksiLogKerja, ...aksiBackup, ...aksiAset, ...aksiAsetKaryawan,
 };

@@ -14,7 +14,7 @@ export function sisaHariPajak(tgl: string | null, hariIni = tglWIB()): number | 
 }
 const baris = (x: Baris) => ({ id: x.id, jenis: x.jenis, brand: x.brand, merk: x.merk, tahun: x.tahun == null ? null : Number(x.tahun), plat: x.plat,
   tglPajak: x.tgl_pajak, sisaHari: sisaHariPajak(x.tgl_pajak), tglStnk: x.tgl_stnk, sisaHariStnk: sisaHariPajak(x.tgl_stnk),
-  keterangan: x.keterangan, dibuatOleh: x.dibuat_oleh, diubah: x.updated_at });
+  keterangan: x.keterangan, dibuatOleh: x.dibuat_oleh, diubah: x.updated_at, pemegangId: x.pemegang_id ?? null, pemegang: x.pemegang ?? '' });
 /* plat dirapikan: huruf besar, spasi tunggal (mis. "bk 1234 abc" -> "BK 1234 ABC") */
 const rapikanPlat = (p: string) => p.toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 /* tambah n tahun ke tanggal (29 Feb -> 28 Feb) */
@@ -28,8 +28,9 @@ const dalam = (x: number | null) => x != null && x >= 0 && x <= 30, lewat = (x: 
 export const aksiAset: KumpulanAksi = {
   async aset_kendaraan_daftar() {
     await need(['admin']);
-    const l = (await q('SELECT * FROM aset_kendaraan WHERE aktif=1 ORDER BY tgl_pajak IS NULL, tgl_pajak, jenis, brand, merk')).map(baris);
-    return { kendaraan: l, ringkas: { mobil: l.filter((x) => x.jenis === 'mobil').length, motor: l.filter((x) => x.jenis === 'motor').length,
+    const l = (await q('SELECT k.*, u.nama pemegang FROM aset_kendaraan k LEFT JOIN users u ON u.id=k.pemegang_id WHERE k.aktif=1 ORDER BY k.tgl_pajak IS NULL, k.tgl_pajak, k.jenis, k.brand, k.merk')).map(baris);
+    const karyawan = (await q("SELECT id, nama FROM users WHERE aktif=1 AND role<>'direktur' ORDER BY nama")).map((x) => ({ id: x.id, nama: x.nama }));
+    return { kendaraan: l, karyawan, ringkas: { mobil: l.filter((x) => x.jenis === 'mobil').length, motor: l.filter((x) => x.jenis === 'motor').length,
       segera: l.filter((x) => dalam(x.sisaHari) || dalam(x.sisaHariStnk)).length, lewat: l.filter((x) => lewat(x.sisaHari) || lewat(x.sisaHariStnk)).length } };
   },
 
@@ -48,7 +49,9 @@ export const aksiAset: KumpulanAksi = {
     if (tglStnk && (tglStnk < '2000-01-01' || tglStnk > tambahHari(tglWIB(), 6 * 366))) gagal('Masa berlaku STNK paling jauh 6 tahun ke depan');
     const kembar = await q1('SELECT id FROM aset_kendaraan WHERE plat=? AND id<>? AND aktif=1', [plat, id]);
     if (kembar) gagal(`Plat ${plat} sudah terdaftar`);
-    const data = { jenis, brand, merk, tahun, plat, tgl_pajak: tgl || null, tgl_stnk: tglStnk || null, keterangan };
+    const pemegangId = i(m, 'pemegangId') || null;
+    if (pemegangId && !(await q1('SELECT id FROM users WHERE id=? AND aktif=1', [pemegangId]))) gagal('Karyawan pemegang tidak ditemukan');
+    const data = { jenis, brand, merk, tahun, plat, tgl_pajak: tgl || null, tgl_stnk: tglStnk || null, keterangan, pemegang_id: pemegangId };
     if (id) {
       const lama = await q1('SELECT * FROM aset_kendaraan WHERE id=? AND aktif=1', [id]);
       if (!lama) gagal('Kendaraan tidak ditemukan', 404);

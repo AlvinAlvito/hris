@@ -10,6 +10,7 @@ import { jadwalAbsen } from '@/lib/absensiHitung';
 import { kirimNotif } from '@/lib/notifikasi';
 import { epoch, jamWIB, tglWIB } from '@/lib/waktu';
 import { periksaPajakKendaraan } from '@/lib/asetPengingat';
+import { periksaKontrakBerakhir } from '@/lib/kontrakPengingat';
 
 const SEBELUM = 5 * 60, SUSUL_IN = 30 * 60, SUSUL_OUT = 60 * 60;
 
@@ -55,6 +56,8 @@ export function mulaiPengingat(): void {
     // pajak kendaraan (menu Aset): terpisah agar galat satu bagian tidak menghentikan yang lain
     try { await jalankanDalamKonteks({ ip: '', ua: '' }, () => periksaPajakKendaraan()); }
     catch (e) { console.error('[pengingat pajak]', e); }
+    try { await jalankanDalamKonteks({ ip: '', ua: '' }, () => periksaKontrakBerakhir()); }
+    catch (e) { console.error('[pengingat kontrak]', e); }
     finally { jalan = false; }
   };
   g.__posiPengingat = setInterval(tick, 60_000);

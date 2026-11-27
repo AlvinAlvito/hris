@@ -226,3 +226,7 @@
   .rk-bidang-baris select{grid-column:1;grid-row:2}
   .rk-baris{grid-template-columns:minmax(0,1fr) auto}
 }
+.rk-salin-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 14px}
+.rk-cek-soal{width:16px;height:16px;margin:0 6px 0 0}
+.rk-soal.dipilih{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary)}
+.rk-impor-galat{margin:8px 0 0;padding-left:18px;font-size:13px;display:grid;gap:3px;color:var(--danger);max-height:180px;overflow:auto}

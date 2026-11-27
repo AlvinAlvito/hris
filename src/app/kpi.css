@@ -95,3 +95,9 @@
 .kp-sub{display:flex;align-items:center;gap:6px;margin:16px 0 4px;font-size:.95rem;flex-wrap:wrap}
 .kp-grup{margin:10px 0 2px;color:var(--muted)}
 .kp-skor.besar small{white-space:nowrap}
+/* Aset Saya / Aset Karyawan */
+.as-daftar{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:12px}
+.as-item{margin:0}
+.as-atas{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.kp-filter.as-filter{grid-template-columns:minmax(0,2fr) repeat(3,minmax(0,1fr))}
+@media (max-width:640px){.kp-filter.as-filter{grid-template-columns:1fr 1fr}.kp-filter.as-filter input{grid-column:1/-1}}

@@ -657,6 +657,7 @@ CREATE TABLE IF NOT EXISTS tes_paket (
   durasi_menit SMALLINT NOT NULL DEFAULT 0,           -- 0 = tanpa batas waktu
   nilai_lulus  TINYINT UNSIGNED NOT NULL DEFAULT 0,   -- nilai minimal lulus 0..100 (0 = tidak ditentukan)
   acak         TINYINT(1) NOT NULL DEFAULT 1,         -- urutan soal diacak per pelamar
+  tujuan       TEXT,                                  -- deskripsi tujuan soal (dipakai ulang saat membuat soal dengan AI)
   dibuat_oleh  INT NULL,
   dibuat_nama  VARCHAR(150) NOT NULL DEFAULT '',
   created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -671,7 +672,7 @@ CREATE TABLE IF NOT EXISTS tes_soal (
   kunci       TINYINT NOT NULL DEFAULT 0,             -- indeks pilihan yang benar (0 = A)
   poin        SMALLINT NOT NULL DEFAULT 1,            -- bobot soal
   pembahasan  VARCHAR(1000) NOT NULL DEFAULT '',
-  sumber      ENUM('manual','ai') NOT NULL DEFAULT 'manual',
+  sumber      ENUM('manual','ai','impor','salin') NOT NULL DEFAULT 'manual',
   urut        INT NOT NULL DEFAULT 0,
   created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -848,12 +849,37 @@ CREATE TABLE IF NOT EXISTS aset_kendaraan (
   tgl_pajak   DATE NULL,                             -- jatuh tempo pajak tahunan berikutnya
   tgl_stnk    DATE NULL,                             -- masa berlaku STNK (perpanjangan 5 tahunan / ganti plat)
   keterangan  VARCHAR(500) NOT NULL DEFAULT '',
+  pemegang_id INT NULL,                              -- karyawan yang memegang / memakai kendaraan (opsional)
   aktif       TINYINT(1) NOT NULL DEFAULT 1,
   dibuat_oleh VARCHAR(150) NOT NULL DEFAULT '',
   created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_aset_plat (plat),
   INDEX (tgl_pajak)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Aset barang yang dipegang karyawan (laptop, HP, monitor, dll.). Karyawan menginput sendiri; HC memantau & memverifikasi di menu Aset.
+-- Barang yang dikembalikan tetap tersimpan sebagai riwayat (status 'dikembalikan').
+CREATE TABLE IF NOT EXISTS aset_barang (
+  id            INT AUTO_INCREMENT PRIMARY KEY,
+  user_id       INT NULL,                             -- pemegang
+  jenis         VARCHAR(60)  NOT NULL,                -- mis. Laptop, HP / Tablet, Monitor
+  tipe          VARCHAR(150) NOT NULL,                -- merk / tipe, mis. Lenovo ThinkPad E14
+  nomor_seri    VARCHAR(100) NOT NULL DEFAULT '',     -- nomor seri / kode inventaris (opsional)
+  sejak         DATE NULL,                            -- dipegang sejak
+  kondisi       ENUM('baik','perlu_perbaikan','rusak') NOT NULL DEFAULT 'baik',
+  keterangan    VARCHAR(500) NOT NULL DEFAULT '',
+  status        ENUM('dipegang','dikembalikan') NOT NULL DEFAULT 'dipegang',
+  tgl_kembali   DATE NULL,
+  diverifikasi  TINYINT(1) NOT NULL DEFAULT 0,        -- sudah dicek HC
+  verifikasi_oleh VARCHAR(150) NOT NULL DEFAULT '',
+  verifikasi_at DATETIME NULL,
+  dibuat_oleh   INT NULL,
+  dibuat_nama   VARCHAR(150) NOT NULL DEFAULT '',
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX (user_id, status), INDEX (jenis),
+  CONSTRAINT fk_aset_barang_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS settings (

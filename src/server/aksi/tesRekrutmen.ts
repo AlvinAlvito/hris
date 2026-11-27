@@ -49,7 +49,7 @@ async function lowonganPemakai(paketId: number) {
   return l.filter((x) => Number(x.tes_paket_id) === paketId || json<{ paketId?: number }[]>(x.bidang, []).some((b) => Number(b.paketId) === paketId));
 }
 function paketRingkas(p: Baris) {
-  return { id: p.id, judul: p.judul, divisi: p.divisi, petunjuk: p.petunjuk ?? '', durasi: Number(p.durasi_menit), nilaiLulus: Number(p.nilai_lulus), acak: !!p.acak,
+  return { id: p.id, judul: p.judul, divisi: p.divisi, petunjuk: p.petunjuk ?? '', durasi: Number(p.durasi_menit), nilaiLulus: Number(p.nilai_lulus), acak: !!p.acak, tujuan: p.tujuan ?? '',
     jumlahSoal: Number(p.jumlah_soal ?? 0), totalPoin: Number(p.total_poin ?? 0), peserta: Number(p.peserta ?? 0), rataNilai: p.rata_nilai == null ? null : Math.round(Number(p.rata_nilai)),
     dibuatNama: p.dibuat_nama, diubah: p.updated_at };
 }
@@ -235,13 +235,13 @@ export const aksiTesRekrutmen: KumpulanAksi = {
     const p = await paketAda(i(m, 'paketId'));
     const daftar = Array.isArray(m.soal) ? m.soal as Record<string, unknown>[] : [];
     if (!daftar.length) gagal('Pilih minimal satu soal');
-    const bersih = daftar.slice(0, 50).map((x, n) => { try { return bersihkanSoal(x); } catch (e) { gagal(`Soal ${n + 1}: ${(e as Error).message}`); } });
+    const bersih = daftar.slice(0, MAKS_SOAL).map((x, n) => { try { return bersihkanSoal(x); } catch (e) { gagal(`Soal ${n + 1}: ${(e as Error).message}`); } });
     const ada = Number((await q1('SELECT COUNT(*) n FROM tes_soal WHERE paket_id=?', [p.id]))?.n ?? 0);
     if (ada + bersih.length > MAKS_SOAL) gagal(`Maksimal ${MAKS_SOAL} soal per paket`);
     let urut = Number((await q1('SELECT COALESCE(MAX(urut),0) u FROM tes_soal WHERE paket_id=?', [p.id]))?.u ?? 0);
     for (const x of bersih) {
       await sisipkan('tes_soal', { paket_id: p.id, pertanyaan: x.pertanyaan, opsi: JSON.stringify(x.opsi), kunci: x.kunci, poin: x.poin, pembahasan: x.pembahasan,
-        sumber: m.sumber === 'ai' ? 'ai' : 'manual', urut: ++urut });
+        sumber: ['ai', 'impor'].includes(String(m.sumber)) ? String(m.sumber) : 'manual', urut: ++urut });
     }
     await exec('UPDATE tes_paket SET updated_at=NOW() WHERE id=?', [p.id]);
     await logAksi(u.id, 'tambah_soal', `${p.judul}: ${bersih.length} soal`);
@@ -256,6 +256,25 @@ export const aksiTesRekrutmen: KumpulanAksi = {
     await exec('UPDATE tes_paket SET updated_at=NOW() WHERE id=?', [x.pid]);
     await logAksi(u.id, 'hapus_soal', x.judul);
     return { pesan: 'Soal dihapus' };
+  },
+
+  /* tempel soal yang disalin dari paket lain (atau paket yang sama) ke paket tujuan */
+  async ts_soal_salin(m) {
+    const u = await need(['atasan']);
+    const p = await paketAda(i(m, 'paketId'));
+    const ids = (Array.isArray(m.ids) ? m.ids : []).map((x: unknown) => Number(x)).filter((x: number) => Number.isInteger(x) && x > 0).slice(0, MAKS_SOAL);
+    if (!ids.length) gagal('Tidak ada soal yang disalin');
+    const asal = await q(`SELECT * FROM tes_soal WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY paket_id, urut, id`, ids);
+    if (!asal.length) gagal('Soal yang disalin sudah tidak ada (mungkin sudah dihapus)');
+    const ada = Number((await q1('SELECT COUNT(*) n FROM tes_soal WHERE paket_id=?', [p.id]))?.n ?? 0);
+    if (ada + asal.length > MAKS_SOAL) gagal(`Maksimal ${MAKS_SOAL} soal per paket`);
+    let urut = Number((await q1('SELECT COALESCE(MAX(urut),0) u FROM tes_soal WHERE paket_id=?', [p.id]))?.u ?? 0);
+    for (const x of asal) {
+      await sisipkan('tes_soal', { paket_id: p.id, pertanyaan: x.pertanyaan, opsi: x.opsi, kunci: x.kunci, poin: x.poin, pembahasan: x.pembahasan, sumber: 'salin', urut: ++urut });
+    }
+    await exec('UPDATE tes_paket SET updated_at=NOW() WHERE id=?', [p.id]);
+    await logAksi(u.id, 'salin_soal', `${asal.length} soal → ${p.judul}`);
+    return { pesan: `${asal.length} soal ditempel ke "${p.judul}"` };
   },
 
   async ts_soal_urut(m) {
@@ -274,8 +293,9 @@ export const aksiTesRekrutmen: KumpulanAksi = {
   async ts_soal_ai(m) {
     await need(['atasan']);
     const p = await paketAda(i(m, 'paketId'));
-    const materi = s(m, 'materi').slice(0, 2000);
-    if (materi.length < 3) gagal('Tulis materi / topik soal agar AI tahu soal yang dibuat');
+    const materi = s(m, 'materi').slice(0, 3000);
+    if (materi.length < 3) gagal('Tulis deskripsi tujuan soal agar AI tahu soal yang dibuat');
+    await exec('UPDATE tes_paket SET tujuan=? WHERE id=?', [materi, p.id]);
     const jumlah = Math.max(1, Math.min(15, i(m, 'jumlah', 10)));
     const tingkat = ({ mudah: 'mudah', sedang: 'sedang', sulit: 'sulit (setara seleksi olimpiade)', campuran: 'campuran mudah, sedang, dan sulit' } as Record<string, string>)[s(m, 'tingkat')] ?? 'sedang';
     const nOpsi = Math.max(3, Math.min(5, i(m, 'opsi', 4)));
@@ -293,7 +313,7 @@ Aturan:
 - Jangan mengulang soal yang sudah ada di bank soal.
 Balas JSON: {"soal": [{"pertanyaan": "...", "opsi": ["...", "..."], "kunci": 0, "pembahasan": "..."}]}`;
     const isi = `Paket soal: ${p.judul}${p.divisi ? ' (divisi ' + p.divisi + ')' : ''}
-Materi / topik / kompetensi yang diuji:
+Deskripsi tujuan soal (materi, kompetensi yang diuji, sasaran peserta):
 ${materi}
 ${ada.length ? '\nSoal yang sudah ada (jangan diulang):\n' + ada.map((x) => '- ' + String(x.pertanyaan).slice(0, 160).replace(/\s+/g, ' ')).join('\n') : ''}`;
     let hasil: Record<string, unknown>;

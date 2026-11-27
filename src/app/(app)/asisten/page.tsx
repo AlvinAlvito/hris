@@ -86,7 +86,7 @@ export default function Asisten() {
           onChange={(e) => setTeks(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void kirim(); } }} />
         <button className="btn auto" disabled={proses || !teks.trim()} onClick={() => kirim()} aria-label="Kirim pertanyaan"><Ikon n="send" /></button>
       </div>
-      <div className="tiny muted ai-catatan">Pertanyaan & data terkait diproses oleh layanan AI Groq. Data rahasia (PIN, KTP, NPWP, rekening, BPJS) tidak pernah dikirim. AI dapat keliru — periksa kembali sebelum mengambil keputusan.</div>
+      <div className="tiny muted ai-catatan">Pertanyaan & data terkait diproses oleh layanan AI Claude (Anthropic), dengan Groq sebagai cadangan. Data rahasia (PIN, KTP, NPWP, rekening, BPJS) tidak pernah dikirim. AI dapat keliru — periksa kembali sebelum mengambil keputusan.</div>
     </div>
   );
 }

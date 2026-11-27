@@ -1,6 +1,8 @@
-/* AI Asisten HC / Super Admin: menjawab pertanyaan berbasis data HRIS lewat Groq (model dengan pemanggilan alat).
-   Data dibaca lewat alat di lib/ai/alat.ts (baca-saja); kolom rahasia tidak pernah dikirim ke model. */
-import { gagal } from '@/lib/http';
+/* AI Asisten HC / Super Admin: menjawab pertanyaan berbasis data HRIS lewat Claude (AI utama) dengan pemanggilan alat;
+   Groq menjadi cadangan bila Claude gagal. Data dibaca lewat alat di lib/ai/alat.ts (baca-saja); kolom rahasia tidak pernah dikirim ke model. */
+import type Anthropic from '@anthropic-ai/sdk';
+import { Gagal, gagal } from '@/lib/http';
+import { adaClaude, claude, FALLBACK, MODEL_CLAUDE } from '@/lib/ai/claude';
 import { logAksi, need } from '@/lib/aturan';
 import { DEFINISI_ALAT, jalankanAlat, konteksAturan } from '@/lib/ai/alat';
 import { tglWIB, jamWIB } from '@/lib/waktu';
@@ -92,6 +94,67 @@ Kolom penting untuk query_sql: users.dept = divisi, users.role (karyawan=Staff, 
 absensi(tanggal, in_time, out_time, terlambat, menit_telat, telat_diizinkan, approval menunggu|disetujui|ditolak); ketidakhadiran.jenis (sakit,izin,keperluan,lainnya,setengah_hari,wfh,dlk); status pengajuan 'Disetujui'/'Menunggu HR'/'Ditolak HR'.`;
 }
 
+type Jejak = { alat: string; ket: string; ok: boolean }[];
+const BATAS_LANGKAH = 'Pertanyaan ini membutuhkan terlalu banyak langkah. Coba persempit, mis. sebutkan nama karyawan atau periode tertentu.';
+
+/* jalankan satu alat dan catat jejaknya; hasil dipotong agar konteks tidak membengkak */
+async function pakaiAlat(nama: string, arg: Record<string, unknown>, jejak: Jejak): Promise<{ isi: string; ok: boolean }> {
+  let isi: string, ok = true;
+  try {
+    isi = JSON.stringify(await jalankanAlat(nama, arg));
+    if (isi.length > 12000) isi = isi.slice(0, 12000) + '…(dipotong)';
+  } catch (e) {
+    ok = false;
+    isi = JSON.stringify({ galat: e instanceof Error ? e.message : String(e) });
+  }
+  const ket = nama === 'query_sql' ? String(arg.tujuan ?? '').slice(0, 160) : Object.entries(arg).map(([k, v]) => `${k}: ${v}`).join(', ').slice(0, 160);
+  jejak.push({ alat: nama, ket, ok });
+  return { isi, ok };
+}
+
+/* Claude: definisi alat yang sama, dalam format Anthropic */
+const ALAT_CLAUDE = DEFINISI_ALAT.map((t) => ({ name: t.function.name, description: t.function.description, input_schema: t.function.parameters })) as Anthropic.Beta.BetaTool[];
+async function jawabClaude(sistem: string, riwayat: { role: 'user' | 'assistant'; content: string }[], jejak: Jejak): Promise<string> {
+  const pesan: Anthropic.Beta.BetaMessageParam[] = riwayat.map((x) => ({ role: x.role, content: x.content }));
+  for (let putaran = 0; putaran < MAKS_PUTARAN; putaran++) {
+    const r = await claude().beta.messages.stream({
+      ...FALLBACK(), model: MODEL_CLAUDE(), max_tokens: 16000, system: sistem, tools: ALAT_CLAUDE, messages: pesan,
+      output_config: { effort: 'medium' }, cache_control: { type: 'ephemeral' },
+    }).finalMessage();
+    if (r.stop_reason === 'refusal') return 'Maaf, pertanyaan ini tidak dapat saya jawab.';
+    pesan.push({ role: 'assistant', content: r.content });
+    const panggil = r.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === 'tool_use');
+    if (!panggil.length || r.stop_reason !== 'tool_use') {
+      return bersihkan(r.content.map((b) => (b.type === 'text' ? b.text : '')).join('\n')) || 'Maaf, saya belum bisa menjawab pertanyaan itu.';
+    }
+    const hasil: Anthropic.Beta.BetaToolResultBlockParam[] = [];
+    for (const p of panggil) {
+      const { isi, ok } = await pakaiAlat(p.name, (p.input && typeof p.input === 'object' ? p.input : {}) as Record<string, unknown>, jejak);
+      hasil.push({ type: 'tool_result', tool_use_id: p.id, content: isi, ...(ok ? {} : { is_error: true }) });
+    }
+    pesan.push({ role: 'user', content: hasil });
+  }
+  return BATAS_LANGKAH;
+}
+
+/* Groq (cadangan): format pesan gaya OpenAI */
+async function jawabGroq(sistem: string, riwayat: { role: 'user' | 'assistant'; content: string }[], jejak: Jejak): Promise<string> {
+  const pesan: Pesan[] = [{ role: 'system', content: sistem }, ...riwayat];
+  for (let putaran = 0; putaran < MAKS_PUTARAN; putaran++) {
+    const jawab = await groq(pesan);
+    const panggil = jawab.tool_calls ?? [];
+    if (!panggil.length) return bersihkan(jawab.content ?? '') || 'Maaf, saya belum bisa menjawab pertanyaan itu.';
+    pesan.push({ role: 'assistant', content: jawab.content ?? null, tool_calls: panggil });
+    for (const p of panggil) {
+      let arg: Record<string, unknown> = {};
+      try { arg = JSON.parse(p.function.arguments || '{}'); } catch { /* argumen rusak */ }
+      const { isi } = await pakaiAlat(p.function.name, arg, jejak);
+      pesan.push({ role: 'tool', tool_call_id: p.id, name: p.function.name, content: isi });
+    }
+  }
+  return BATAS_LANGKAH;
+}
+
 export const aksiAsisten: KumpulanAksi = {
   async ai_tanya(m) {
     const u = await need(['admin']);
@@ -102,30 +165,13 @@ export const aksiAsisten: KumpulanAksi = {
     const pertanyaan = riwayat[riwayat.length - 1].content;
     await logAksi(u.id, 'ai_tanya', pertanyaan.slice(0, 250));
 
-    const pesan: Pesan[] = [{ role: 'system', content: await promptSistem(u.nama) }, ...riwayat];
-    const jejak: { alat: string; ket: string; ok: boolean }[] = [];
-    for (let putaran = 0; putaran < MAKS_PUTARAN; putaran++) {
-      const jawab = await groq(pesan);
-      const panggil = jawab.tool_calls ?? [];
-      if (!panggil.length) return { jawaban: bersihkan(jawab.content ?? '') || 'Maaf, saya belum bisa menjawab pertanyaan itu.', jejak };
-      pesan.push({ role: 'assistant', content: jawab.content ?? null, tool_calls: panggil });
-      for (const p of panggil) {
-        let arg: Record<string, unknown> = {};
-        try { arg = JSON.parse(p.function.arguments || '{}'); } catch { /* argumen rusak */ }
-        let isi: string, ok = true;
-        try {
-          isi = JSON.stringify(await jalankanAlat(p.function.name, arg));
-          if (isi.length > 12000) isi = isi.slice(0, 12000) + '…(dipotong)';
-        } catch (e) {
-          ok = false;
-          isi = JSON.stringify({ galat: e instanceof Error ? e.message : String(e) });
-        }
-        const ket = p.function.name === 'query_sql' ? String(arg.tujuan ?? '').slice(0, 160)
-          : Object.entries(arg).map(([k, v]) => `${k}: ${v}`).join(', ').slice(0, 160);
-        jejak.push({ alat: p.function.name, ket, ok });
-        pesan.push({ role: 'tool', tool_call_id: p.id, name: p.function.name, content: isi });
-      }
+    const sistem = await promptSistem(u.nama);
+    if (adaClaude()) {
+      const jejak: Jejak = [];
+      try { return { jawaban: await jawabClaude(sistem, riwayat, jejak), jejak, ai: 'claude' }; }
+      catch (e) { if (e instanceof Gagal) throw e; console.error('[asisten] Claude gagal, beralih ke Groq:', e instanceof Error ? e.message.slice(0, 300) : e); }
     }
-    return { jawaban: 'Pertanyaan ini membutuhkan terlalu banyak langkah. Coba persempit, mis. sebutkan nama karyawan atau periode tertentu.', jejak };
+    const jejak: Jejak = [];
+    return { jawaban: await jawabGroq(sistem, riwayat, jejak), jejak, ai: 'groq' };
   },
 };

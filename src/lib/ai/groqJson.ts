@@ -1,5 +1,8 @@
-/* Panggilan Groq yang mengembalikan objek JSON (dipakai pemrosesan latar belakang seperti analisis CV).
-   Batas kuota (429) dilempar sebagai KuotaPenuh agar pemanggil bisa menjadwalkan ulang, bukan menunggu lama. */
+/* Panggilan AI yang mengembalikan objek JSON (analisis CV, kualifikasi lowongan, soal tes, dll.).
+   Urutan: Claude (AI utama) -> Groq (cadangan) bila Claude gagal / belum dikonfigurasi.
+   Batas kuota Groq (429) dilempar sebagai KuotaPenuh agar pemanggil bisa menjadwalkan ulang, bukan menunggu lama. */
+import { adaClaude, claudeTeks } from './claude';
+
 export class KuotaPenuh extends Error {}
 
 const MODEL = () => process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
@@ -15,6 +18,19 @@ function uraiJson(teks: string): Record<string, unknown> {
 
 /* nalar: tingkat penalaran model; 'medium' untuk tugas yang butuh ketelitian hitung (mis. menyusun soal & kunci jawaban) */
 export async function groqJson(sistem: string, pengguna: string, maksToken = 2200, nalar: 'low' | 'medium' | 'high' = 'low'): Promise<Record<string, unknown>> {
+  if (adaClaude()) {
+    try {
+      // token berpikir ikut dihitung dalam max_tokens -> beri ruang lebih
+      const teks = await claudeTeks(sistem + '\n\nBalas HANYA dengan satu objek JSON yang valid, tanpa teks lain.', pengguna, Math.min(32000, Math.max(8000, maksToken * 2)), nalar);
+      return uraiJson(teks);
+    } catch (e) {
+      console.error('[ai] Claude gagal, beralih ke Groq:', e instanceof Error ? e.message.slice(0, 200) : e);
+    }
+  }
+  return groqSaja(sistem, pengguna, maksToken, nalar);
+}
+
+async function groqSaja(sistem: string, pengguna: string, maksToken: number, nalar: 'low' | 'medium' | 'high'): Promise<Record<string, unknown>> {
   const kunci = process.env.GROQ_API_KEY;
   if (!kunci) throw new Error('GROQ_API_KEY belum diisi');
   let galatTerakhir = '';
