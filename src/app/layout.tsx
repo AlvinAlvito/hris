@@ -3,6 +3,7 @@ import './globals.css';
 import './rekrutmen.css';
 import './kpi.css';
 import './logkerja.css';
+import './flyer.css';
 
 export const metadata: Metadata = {
   title: 'HRIS POSI',

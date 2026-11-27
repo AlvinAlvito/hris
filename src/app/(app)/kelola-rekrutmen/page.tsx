@@ -7,10 +7,11 @@ import { isAdminUp, useAplikasi } from '@/components/Aplikasi';
 import { Ikon } from '@/components/Ikon';
 import { api } from '@/lib/klien/api';
 import { tglIndo, tglPendek } from '@/lib/klien/format';
+import { FlyerLowongan } from '@/components/FlyerLowongan';
 
 type Data = Record<string, any>;
 type Lowongan = { id: number; judul: string; divisi: string; lokasi: string; tipe: string; tipeLabel: string; deskripsi: string; kualifikasiTeks: string;
-  nilaiPlusTeks: string; pertanyaan: string[]; kuota: number; batas: string | null; status: 'draf' | 'buka' | 'tutup'; jumlah: number; baru: number; diterima: number;
+  nilaiPlusTeks: string; kualifikasi: string[]; nilaiPlus: string[]; pertanyaan: string[]; kuota: number; batas: string | null; status: 'draf' | 'buka' | 'tutup'; jumlah: number; baru: number; diterima: number;
   wajibVideo: boolean; petunjukVideoTeks: string; bidangAtur: { nama: string; paketId: number | null }[]; tesPaketId: number | null; tes: boolean };
 type Kandidat = { id: number; kode: string; nama: string; email: string; noHp: string; lowonganId: number; lowongan: string; tahap: string; skor: number | null;
   kecocokan: string; aiStatus: string; rating: number | null; pendidikan: string; pengalamanBulan: number | null; pengalamanIsian: string; ringkasan: string; dilamar: string; userId: number | null;
@@ -177,6 +178,10 @@ function DaftarKandidat({ r, segarkan }: { r: Ringkas; segarkan: () => void }) {
 function DaftarLowongan({ r, segarkan, lihat }: { r: Ringkas; segarkan: () => void; lihat: (id: number) => void }) {
   const { bukaSheet, toast, galat, yakin } = useAplikasi();
   const form = (l: Lowongan | null, salin = false) => bukaSheet(<FormLowongan l={l} salin={salin} tipe={r.tipe} paket={r.paket} petunjukVideo={r.petunjukVideo} selesai={segarkan} />, { besar: true });
+  const flyer = (l: Lowongan) => bukaSheet(<>
+    {l.status !== 'buka' && <div className="warn" style={{ marginBottom: 10 }}>Lowongan ini belum <b>Dibuka</b>. QR di flyer baru bisa dipakai pelamar setelah lowongan dibuka.</div>}
+    <FlyerLowongan l={{ id: l.id, judul: l.judul, divisi: l.divisi, lokasi: l.lokasi, tipeLabel: l.tipeLabel, deskripsi: l.deskripsi, kualifikasi: l.kualifikasi,
+      nilaiPlus: l.nilaiPlus, kuota: l.kuota, batas: l.batas, bidang: l.bidangAtur.map((b) => b.nama) }} tautan={tautanPublik(l.id)} /></>, { besar: true });
   const status = (l: Lowongan, s: string) => api<{ pesan: string }>('rk_lowongan_status', { id: l.id, status: s }).then((x) => { toast(x.pesan); segarkan(); }).catch(galat);
   const hapus = async (l: Lowongan) => {
     if (!(await yakin(`Hapus lowongan "${l.judul}"?`, 'Hanya lowongan tanpa pelamar yang bisa dihapus.', { ya: 'Hapus' }))) return;
@@ -201,6 +206,7 @@ function DaftarLowongan({ r, segarkan, lihat }: { r: Ringkas; segarkan: () => vo
             {l.status === 'buka' ? <button className="btn ghost sm auto" onClick={() => status(l, 'tutup')}><Ikon n="lock" />Tutup</button>
               : <button className="btn ghost sm auto" onClick={() => status(l, 'buka')}><Ikon n="send" />Buka</button>}
             {l.status === 'buka' && <button className="btn ghost sm auto" onClick={() => navigator.clipboard.writeText(tautanPublik(l.id)).then(() => toast('Tautan lowongan disalin'))}><Ikon n="copy" />Tautan</button>}
+            <button className="btn ghost sm auto" onClick={() => flyer(l)} title="Buat flyer: unduh atau bagikan gambar"><Ikon n="image" />Flyer</button>
             <button className="btn ghost sm auto" onClick={() => form(l, true)} title="Salin jadi lowongan baru"><Ikon n="plus" />Duplikat</button>
             {!l.jumlah && <button className="btn ghost sm auto" onClick={() => hapus(l)} aria-label="Hapus lowongan"><Ikon n="trash-2" /></button>}
           </div>

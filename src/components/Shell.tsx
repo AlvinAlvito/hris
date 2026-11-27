@@ -11,6 +11,19 @@ import { BannerNotif, LoncengNotif, PenyediaNotif } from './Notifikasi';
 import { Avatar } from './Avatar';
 import { Ikon } from './Ikon';
 
+/* kata kunci tambahan agar menu mudah dicari dengan istilah sehari-hari */
+const KATA_MENU: Record<string, string> = {
+  beranda: 'home clock in absen masuk pulang', ajuan: 'izin cuti lembur sakit wfh dinas dlk lupa absen pulang awal terlambat koreksi',
+  slip: 'gaji payslip', riwayat: 'absen kehadiran presensi', kerjaku: 'todo to-do log pekerjaan tugas', kpiku: 'kinerja penilaian',
+  asetku: 'laptop hp inventaris barang', dash: 'ringkasan statistik', ai: 'asisten tanya chat', inbox: 'approval setujui tolak pengajuan',
+  abs: 'absensi kehadiran presensi telat koreksi', cut: 'cuti saldo', kpi: 'kinerja penilaian kbi insentif', beban: 'workload utilisasi log',
+  kar: 'pegawai staff kontrak data karyawan', org: 'bagan atasan bawahan jabatan unit divisi', rek: 'lowongan loker pelamar kandidat cv flyer',
+  soal: 'tes ujian pilihan ganda rekrutmen', cab: 'kantor radius lokasi', aset: 'kendaraan pajak stnk inventaris barang laptop',
+  lapabs: 'rekap excel', lapcuti: 'rekap', laplembur: 'overtime rekap', lapdinas: 'dlk luar kota', pay: 'gaji penggajian',
+  info: 'libur pengumuman', set: 'setting jam kerja toleransi', backup: 'cadangan spreadsheet', profil: 'akun pin foto',
+};
+const normal = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
 function aktifUntuk(path: string): ItemNav | undefined {
   return [...NAV].sort((a, b) => b.href.length - a.href.length).find((n) => path === n.href || path.startsWith(n.href + '/'));
 }
@@ -27,6 +40,20 @@ export function Shell({ children }: { children: ReactNode }) {
   const lalu = useRef(path);
   const navBawah = useRef<HTMLElement>(null);
   const [indikator, setIndikator] = useState<{ x: number; tampil: boolean }>({ x: 0, tampil: false });
+  const [cari, setCari] = useState('');
+  const kotakCari = useRef<HTMLInputElement>(null);
+  /* Ctrl+K atau "/" untuk mencari menu */
+  useEffect(() => {
+    const f = (e: KeyboardEvent) => {
+      const ketik = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+      if ((e.key === 'k' && (e.ctrlKey || e.metaKey)) || (e.key === '/' && !ketik)) {
+        if (!kotakCari.current || kotakCari.current.offsetParent === null) return;
+        e.preventDefault(); kotakCari.current.focus(); kotakCari.current.select();
+      }
+    };
+    window.addEventListener('keydown', f);
+    return () => window.removeEventListener('keydown', f);
+  }, []);
 
   useEffect(() => pantauSibuk(setSibuk), []);
   useEffect(() => { try { setMini(localStorage.getItem('posi.sidebar') === 'mini'); } catch { /* */ } }, []);
@@ -46,7 +73,7 @@ export function Shell({ children }: { children: ReactNode }) {
     if (baru !== arah) setArah(baru);
     lalu.current = path;
   }
-  useEffect(() => { setLaci(false); window.scrollTo(0, 0); }, [path]);
+  useEffect(() => { setLaci(false); setCari(''); window.scrollTo(0, 0); }, [path]);
   useEffect(() => { document.body.classList.toggle('drawer', laci); }, [laci]);
   useEffect(() => { document.body.classList.toggle('sidebar-mini', mini); }, [mini]);
   useEffect(() => { document.body.classList.toggle('hal-beranda', aktif?.k === 'beranda'); }, [aktif]);
@@ -80,6 +107,8 @@ export function Shell({ children }: { children: ReactNode }) {
     } catch (e) { galat(e); }
   };
   const bawah = urutanBawah(me);
+  const kata = normal(cari.trim()).split(/\s+/).filter(Boolean);
+  const hasilCari = kata.length ? vis.filter((n) => { const teks = normal(`${n.t} ${n.g} ${KATA_MENU[n.k] ?? ''}`); return kata.every((k) => teks.includes(k)); }) : vis;
   const logo = settings.logo || '/logo-posi.png';
   let grup = '';
 
@@ -92,8 +121,18 @@ export function Shell({ children }: { children: ReactNode }) {
           <div className="logo"><img src={logo} alt={'Logo ' + settings.perusahaan} /></div>
           <div className="sl">HRIS</div>
         </div>
+        <div className="nav-cari">
+          <Ikon n="search" />
+          <input ref={kotakCari} value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari menu…" aria-label="Cari menu"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') { setCari(''); e.currentTarget.blur(); }
+              if (e.key === 'Enter' && kata.length && hasilCari[0]) { router.push(hasilCari[0].href); setCari(''); e.currentTarget.blur(); }
+            }} />
+          {cari ? <button type="button" onClick={() => { setCari(''); kotakCari.current?.focus(); }} aria-label="Hapus pencarian"><Ikon n="x" /></button> : <kbd>Ctrl K</kbd>}
+        </div>
         <nav id="sideNav">
-          {vis.map((n) => {
+          {kata.length > 0 && !hasilCari.length && <div className="nav-kosong">Menu "{cari}" tidak ditemukan</div>}
+          {hasilCari.map((n) => {
             const kepala = n.g !== grup ? <div className="ngrp">{(grup = n.g)}</div> : null;
             return (
               <div key={n.k} style={{ display: 'contents' }}>

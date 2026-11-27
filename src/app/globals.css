@@ -981,3 +981,13 @@ td.r,th.r{text-align:right}
   .sheet{box-shadow:none;border:0;max-height:none;padding:0;max-width:none}
   .slip{border:0;padding:0}
 }
+/* pencarian menu di sidebar */
+.nav-cari{position:relative;display:flex;align-items:center;gap:8px;margin:12px 12px 2px;padding:0 10px;height:40px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2,rgba(127,127,127,.06));color:var(--muted)}
+.nav-cari:focus-within{border-color:var(--sky);box-shadow:0 0 0 3px rgba(56,139,253,.15)}
+.nav-cari .ik{width:17px;height:17px;flex:none}
+.nav-cari input{flex:1;min-width:0;border:0 !important;background:transparent !important;box-shadow:none !important;padding:0 !important;height:38px;font:inherit;font-size:14px;color:var(--ink);outline:none}
+.nav-cari button{border:0;background:none;color:var(--muted);cursor:pointer;display:grid;place-items:center;padding:2px}
+.nav-cari kbd{font:600 10.5px/1 inherit;font-family:inherit;border:1px solid var(--line);border-radius:6px;padding:3px 5px;color:var(--muted);white-space:nowrap}
+.nav-kosong{padding:14px 12px;font-size:13px;color:var(--muted)}
+@media (hover:none){.nav-cari kbd{display:none}}
+@media (min-width:1025px){body.sidebar-mini .nav-cari{display:none}}
